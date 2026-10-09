@@ -596,6 +596,7 @@ struct CreateVideoPage: View {
     @State private var recordedURL: URL?
     @State private var showPost = false
     @State private var permissionMessage: String?
+    @State private var permissionsGranted = false
     @State private var busy = false
     @StateObject private var recorder = LoopScreenRecorder()
 
@@ -617,9 +618,26 @@ struct CreateVideoPage: View {
                 .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 12)
 
                 ZStack(alignment: .bottom) {
-                    FaceCameraView(effect: filters[selectedFilter].1)
-                        .clipShape(RoundedRectangle(cornerRadius: 22))
-                        .padding(.horizontal, 10)
+                    Group {
+                        if permissionsGranted {
+                            FaceCameraView(effect: filters[selectedFilter].1)
+                        } else {
+                            ZStack {
+                                Color.black
+                                VStack(spacing: 12) {
+                                    if permissionMessage == nil {
+                                        ProgressView().tint(.white)
+                                        Text("Preparing camera…").font(.caption).foregroundStyle(.white.opacity(0.75))
+                                    } else {
+                                        Image(systemName: "camera.fill").font(.system(size: 30)).foregroundStyle(.white.opacity(0.7))
+                                        Text(permissionMessage ?? "Camera unavailable").font(.caption).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.85)).padding(.horizontal, 24)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 22))
+                    .padding(.horizontal, 10)
                     LinearGradient(colors: [.clear, .black.opacity(0.5)], startPoint: .center, endPoint: .bottom)
                         .frame(height: 145)
                         .clipShape(RoundedRectangle(cornerRadius: 22))
@@ -696,6 +714,9 @@ struct CreateVideoPage: View {
         }
         .preferredColorScheme(.dark)
         .task { await requestPermissions() }
+        .onDisappear {
+            recorder.stopIfNeeded()
+        }
         .onChange(of: recorder.outputURL) { value in
             if let value { recordedURL = value; isRecording = false; busy = false }
         }
@@ -737,6 +758,7 @@ struct CreateVideoPage: View {
         }
         guard micOK else { permissionMessage = "Microphone permission is required to record sound."; return }
         permissionMessage = nil
+        permissionsGranted = true
     }
 
     private func toggleRecording() {
