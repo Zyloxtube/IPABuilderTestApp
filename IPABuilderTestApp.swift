@@ -451,34 +451,76 @@ struct SearchSheet: View {
 }
 
 struct ProfileSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedTab = 0
+    @State private var showEdit = false
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                Spacer()
-                ZStack {
-                    Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 104, height: 104)
-                    Image(systemName: "person.fill").font(.system(size: 45)).foregroundStyle(.white)
+            ScrollView {
+                VStack(spacing: 18) {
+                    HStack(spacing: 16) {
+                        Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 88, height: 88).overlay(Image(systemName: "person.fill").font(.system(size: 40)))
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Your Loop").font(.title3.bold())
+                            Text("@yourloop").font(.subheadline).foregroundStyle(.secondary)
+                            Text("Creator on Loop").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }.padding(.horizontal, 18).padding(.top, 15)
+                    HStack {
+                        stat("0", "Following")
+                        stat("0", "Followers")
+                        stat("0", "Likes")
+                    }
+                    HStack(spacing: 10) {
+                        Button { showEdit = true } label: { Text("Edit profile").font(.system(size: 14, weight: .bold)).frame(maxWidth: .infinity).padding(12).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
+                        Button {} label: { Image(systemName: "person.badge.plus").frame(width: 46, height: 42).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
+                    }.padding(.horizontal, 18)
+                    Text("Making little moments loop forever.").font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
+                    HStack(spacing: 0) {
+                        tab("square.grid.2x2.fill", 0)
+                        tab("heart", 1)
+                    }.padding(.top, 5)
+                    Rectangle().fill(.white.opacity(0.12)).frame(height: 0.5)
+                    VStack(spacing: 10) {
+                        Image(systemName: selectedTab == 0 ? "video" : "heart").font(.system(size: 34)).foregroundStyle(.secondary)
+                        Text(selectedTab == 0 ? "Your videos will appear here" : "Videos you like will appear here").font(.subheadline).foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity).padding(.vertical, 60)
                 }
-                Text("Your Loop").font(.title.bold())
-                Text("@yourloop").foregroundStyle(.secondary)
-                HStack(spacing: 36) {
-                    stat("0", "Following")
-                    stat("0", "Followers")
-                    stat("0", "Likes")
-                }.padding(.vertical, 12)
-                Button {} label: {
-                    Label("Edit profile", systemImage: "pencil").font(.subheadline.bold()).frame(maxWidth: .infinity).padding(13).background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
-                }.padding(.horizontal, 32)
-                Text("Your videos will live here.").font(.subheadline).foregroundStyle(.secondary)
-                Spacer()
+            }.background(Color.black)
+            .navigationTitle("Profile").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button { dismiss() } label: { Image(systemName: "chevron.left").fontWeight(.semibold) } }
+                ToolbarItem(placement: .topBarTrailing) { Button { showEdit = true } label: { Image(systemName: "line.3.horizontal") } }
             }
-            .frame(maxWidth: .infinity)
-            .navigationTitle("Profile")
-            .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showEdit) { EditProfileDemo() }
         }.preferredColorScheme(.dark)
     }
-    private func stat(_ number: String, _ label: String) -> some View {
-        VStack(spacing: 4) { Text(number).font(.title3.bold()); Text(label).font(.caption).foregroundStyle(.secondary) }
+    private func stat(_ n: String, _ label: String) -> some View {
+        VStack(spacing: 4) { Text(n).font(.system(size: 18, weight: .bold)); Text(label).font(.system(size: 12)).foregroundStyle(.secondary) }.frame(maxWidth: .infinity)
+    }
+    private func tab(_ icon: String, _ index: Int) -> some View {
+        Button { selectedTab = index } label: {
+            VStack(spacing: 10) { Image(systemName: icon).font(.system(size: 18)); Rectangle().fill(selectedTab == index ? Color.white : .clear).frame(height: 2) }
+                .frame(maxWidth: .infinity).foregroundStyle(selectedTab == index ? .white : .secondary)
+        }
+    }
+}
+
+struct EditProfileDemo: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = "Your Loop"
+    @State private var username = "yourloop"
+    @State private var bio = "Making little moments loop forever."
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Profile") { TextField("Name", text: $name); TextField("Username", text: $username); TextField("Bio", text: $bio, axis: .vertical) }
+                Section { Text("Demo only — edits are not saved to a server.").font(.caption).foregroundStyle(.secondary) }
+            }.navigationTitle("Edit profile").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+        }.preferredColorScheme(.dark)
     }
 }
 
