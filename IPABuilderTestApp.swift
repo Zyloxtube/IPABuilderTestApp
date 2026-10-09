@@ -28,8 +28,8 @@ struct FeedClip: Identifiable {
     static let samples: [FeedClip] = [
         .init(id: 1, creator: "Milo Makes", handle: "@milomakes", caption: "POV: you found the quietest place on Earth 🌊", tags: "#ocean #escape #loop", song: "original audio · milomakes", likes: "248.6K", comments: "3,842", accent: Color(red: 0.08, green: 0.72, blue: 0.79), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4", symbol: "water.waves"),
         .init(id: 2, creator: "Pixel Planet", handle: "@pixelplanet", caption: "The internet is a very strange place. Stay curious.", tags: "#weird #internet #facts", song: "NEON DREAMS · pixelplanet", likes: "91.2K", comments: "1,204", accent: Color(red: 0.57, green: 0.27, blue: 0.96), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", symbol: "sparkles"),
-        .init(id: 3, creator: "Weekend Frames", handle: "@weekendframes", caption: "A tiny reminder to go outside today ☀️", tags: "#weekend #travel #vibes", song: "soft focus · weekendframes", likes: "512K", comments: "8,091", accent: Color(red: 1.0, green: 0.42, blue: 0.29), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", symbol: "sun.max.fill"),
-        .init(id: 4, creator: "The Daily Loop", handle: "@thedailyloop", caption: "This is your sign to try something new.", tags: "#motivation #tryit #fyp", song: "little by little · thedailyloop", likes: "76.4K", comments: "976", accent: Color(red: 0.20, green: 0.79, blue: 0.53), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4", symbol: "bolt.fill")
+        .init(id: 3, creator: "Weekend Frames", handle: "@weekendframes", caption: "A tiny reminder to go outside today ☀️", tags: "#weekend #travel #vibes", song: "soft focus · weekendframes", likes: "512K", comments: "8,091", accent: Color(red: 1.0, green: 0.42, blue: 0.29), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", symbol: "sun.max"),
+        .init(id: 4, creator: "The Daily Loop", handle: "@thedailyloop", caption: "This is your sign to try something new.", tags: "#motivation #tryit #fyp", song: "little by little · thedailyloop", likes: "76.4K", comments: "976", accent: Color(red: 0.20, green: 0.79, blue: 0.53), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4", symbol: "bolt")
     ]
 }
 
@@ -82,7 +82,7 @@ struct LoopFeedView: View {
         .sheet(isPresented: $showSearch) { SearchSheet() }
         .fullScreenCover(isPresented: $showProfile) { ProfileSheet() }
         .fullScreenCover(isPresented: $showCreate) { CreateVideoPage { caption in
-            let clip = FeedClip(id: (clips.map(\.id).max() ?? 0) + 1, creator: "Your Loop", handle: "@yourloop", caption: caption.isEmpty ? "My new Loop ✨" : caption, tags: "#loop #newpost", song: "original audio · yourloop", likes: "0", comments: "0", accent: .purple, videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4", symbol: "person.fill")
+            let clip = FeedClip(id: (clips.map(\.id).max() ?? 0) + 1, creator: "Your Loop", handle: "@yourloop", caption: caption.isEmpty ? "My new Loop ✨" : caption, tags: "#loop #newpost", song: "original audio · yourloop", likes: "0", comments: "0", accent: .purple, videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4", symbol: "person")
             clips.insert(clip, at: 0)
             selectedClip = 0
             showCreate = false
@@ -127,7 +127,7 @@ struct LoopFeedView: View {
 
     private var bottomBar: some View {
         HStack {
-            navButton("house.fill", title: "Home", selected: true) {}
+            navButton("house", title: "Home", selected: true) {}
             Spacer()
             navButton("safari", title: "Discover", selected: false) { showSearch = true }
             Spacer()
@@ -138,7 +138,7 @@ struct LoopFeedView: View {
                 }
             }
             Spacer()
-            navButton("bubble.left.and.bubble.right.fill", title: "Inbox", selected: false) { showInbox = true }
+            navButton("text.bubble", title: "Inbox", selected: false) { showInbox = true }
             Spacer()
             navButton("person.crop.circle", title: "Profile", selected: false) { showProfile = true }
         }
@@ -235,18 +235,18 @@ struct ClipPage: View {
                             ZStack(alignment: .bottom) {
                                 Circle().fill(clip.accent).frame(width: 46, height: 46)
                                 Image(systemName: clip.symbol).font(.system(size: 21, weight: .bold)).foregroundStyle(.white).frame(width: 46, height: 46)
-                                Image(systemName: "plus.circle.fill").font(.system(size: 19)).foregroundStyle(.pink).offset(y: 8)
+                                Image(systemName: "plus.circle").font(.system(size: 19)).foregroundStyle(.pink).offset(y: 8)
                             }
                         }
-                        actionButton("heart.fill", value: isLiked ? "248.7K" : clip.likes, color: .white, gradient: isLiked, action: onLike)
-                        actionButton("bubble.right.fill", value: clip.comments, color: .white, action: onComments)
-                        actionButton("bookmark.fill", value: isSaved ? "Saved" : "Save", color: isSaved ? Color(red: 1, green: 0.78, blue: 0.16) : .white, action: onSave)
-                        actionButton("arrowshape.turn.up.right.fill", value: "Share", color: .white, action: onShare)
+                        actionButton("heart", value: isLiked ? "248.7K" : clip.likes, color: .white, gradient: isLiked, action: onLike)
+                        actionButton("text.bubble", value: clip.comments, color: .white, action: onComments)
+                        actionButton("bookmark", value: isSaved ? "Saved" : "Save", color: isSaved ? Color(red: 1, green: 0.78, blue: 0.16) : .white, action: onSave)
+                        actionButton("arrowshape.turn.up.right", value: "Share", color: .white, action: onShare)
                         Button { isMuted.toggle(); player.isMuted = isMuted } label: {
                             ZStack {
                                 Circle().fill(Color.white.opacity(0.16)).frame(width: 40, height: 40)
-                                Image(systemName: "opticaldisc.fill").font(.system(size: 27, weight: .regular)).foregroundStyle(.white)
-                                if isMuted { Image(systemName: "speaker.slash.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(.yellow).offset(x: 13, y: 13) }
+                                Image(systemName: "opticaldisc").font(.system(size: 27, weight: .regular)).foregroundStyle(.white)
+                                if isMuted { Image(systemName: "speaker.slash").font(.system(size: 12, weight: .bold)).foregroundStyle(.yellow).offset(x: 13, y: 13) }
                             }
                         }
                         .buttonStyle(.plain)
@@ -258,7 +258,7 @@ struct ClipPage: View {
             }
 
             if !isPlaying {
-                Image(systemName: "play.fill")
+                Image(systemName: "play")
                     .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(.white)
                     .padding(24)
@@ -325,7 +325,7 @@ struct CommentsSheet: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(clip.creator).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                         HStack(spacing: 6) {
-                            Image(systemName: "bubble.left.and.bubble.right.fill").foregroundStyle(.cyan)
+                            Image(systemName: "text.bubble").foregroundStyle(.cyan)
                             Text("\\(clip.comments) comments").font(.system(size: 12, weight: .medium))
                         }.foregroundStyle(.secondary)
                     }
@@ -354,7 +354,7 @@ struct CommentsSheet: View {
                             HStack(alignment: .top, spacing: 11) {
                                 Circle().fill(LinearGradient(colors: [.purple, .pink, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                                     .frame(width: 38, height: 38)
-                                    .overlay(Image(systemName: "person.fill").font(.system(size: 15)).foregroundStyle(.white))
+                                    .overlay(Image(systemName: "person").font(.system(size: 15)).foregroundStyle(.white))
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(["loopfan_24", "noor.exe", "pixelkid"][index % 3])
                                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
@@ -368,7 +368,7 @@ struct CommentsSheet: View {
                                 Spacer(minLength: 8)
                                 Button { if likedComments.contains(index) { likedComments.remove(index) } else { likedComments.insert(index) } } label: {
                                     VStack(spacing: 4) {
-                                        Image(systemName: "heart.fill")
+                                        Image(systemName: "heart")
                                             .font(.system(size: 15))
                                             .foregroundStyle(likedComments.contains(index) ? AnyShapeStyle(LinearGradient(colors: [.pink, .purple, .orange], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(Color.white.opacity(0.68)))
                                         Text(likedComments.contains(index) ? "1" : "").font(.system(size: 10)).foregroundStyle(.secondary)
@@ -386,7 +386,7 @@ struct CommentsSheet: View {
                 HStack(spacing: 10) {
                     Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 35, height: 35)
-                        .overlay(Image(systemName: "person.fill").font(.system(size: 14)).foregroundStyle(.white))
+                        .overlay(Image(systemName: "person").font(.system(size: 14)).foregroundStyle(.white))
                     HStack(spacing: 8) {
                         TextField("Add a comment…", text: $comment, axis: .vertical)
                             .font(.system(size: 14))
@@ -396,7 +396,7 @@ struct CommentsSheet: View {
                             .onSubmit(postComment)
                         if !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Button(action: postComment) {
-                                Image(systemName: "arrow.up.circle.fill")
+                                Image(systemName: "arrow.up.circle")
                                     .font(.system(size: 27))
                                     .foregroundStyle(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .leading, endPoint: .trailing))
                             }
@@ -468,7 +468,7 @@ struct ProfileSheet: View {
                 VStack(spacing: 18) {
                     HStack(spacing: 16) {
                         Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 88, height: 88).overlay(Image(systemName: "person.fill").font(.system(size: 40)))
+                            .frame(width: 88, height: 88).overlay(Image(systemName: "person").font(.system(size: 40)))
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Your Loop").font(.title3.bold())
                             Text("@yourloop").font(.subheadline).foregroundStyle(.secondary)
@@ -487,7 +487,7 @@ struct ProfileSheet: View {
                     }.padding(.horizontal, 18)
                     Text("Making little moments loop forever.").font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
                     HStack(spacing: 0) {
-                        tab("square.grid.2x2.fill", 0)
+                        tab("square.grid.2x2", 0)
                         tab("heart", 1)
                     }.padding(.top, 5)
                     Rectangle().fill(.white.opacity(0.12)).frame(height: 0.5)
@@ -537,8 +537,8 @@ struct InboxSheet: View {
         NavigationStack {
             List {
                 inboxRow("sparkles", "Welcome to loop", "Your new scroll starts here.", "Now", .cyan)
-                inboxRow("heart.fill", "Activity", "When people like your videos, you'll see it here.", "Today", .pink)
-                inboxRow("person.2.fill", "New creators", "Find your next favorite creator.", "Today", .purple)
+                inboxRow("heart", "Activity", "When people like your videos, you'll see it here.", "Today", .pink)
+                inboxRow("person.2", "New creators", "Find your next favorite creator.", "Today", .purple)
             }
             .scrollContentBackground(.hidden)
             .navigationTitle("Inbox")
@@ -561,16 +561,16 @@ struct ShareSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 22) {
-                Image(systemName: "paperplane.fill").font(.system(size: 38)).foregroundStyle(.cyan).padding(.top, 30)
+                Image(systemName: "paperplane").font(.system(size: 38)).foregroundStyle(.cyan).padding(.top, 30)
                 Text("Share this loop").font(.title2.bold())
                 Text(clip.caption).multilineTextAlignment(.center).foregroundStyle(.secondary).padding(.horizontal)
                 HStack(spacing: 24) {
-                    shareTarget("message.fill", "Messages", .green)
+                    shareTarget("message", "Messages", .green)
                     shareTarget("link", "Copy link", .cyan)
                     shareTarget("square.and.arrow.up", "More", .purple)
                 }
                 Button { UIPasteboard.general.string = "https://loop.demo/video/\(clip.id)"; copied = true } label: {
-                    Label(copied ? "Link copied" : "Copy demo link", systemImage: copied ? "checkmark.circle.fill" : "doc.on.doc")
+                    Label(copied ? "Link copied" : "Copy demo link", systemImage: copied ? "checkmark.circle" : "doc.on.doc")
                         .fontWeight(.bold).frame(maxWidth: .infinity).padding(15).background(Color.cyan.opacity(0.16), in: RoundedRectangle(cornerRadius: 14))
                 }.padding(.horizontal)
                 Spacer()
@@ -599,7 +599,7 @@ struct CreateVideoPage: View {
             ZStack {
                 LinearGradient(colors: [colors[selected].opacity(0.7), .black, colors[selected].opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 VStack(spacing: 12) {
-                    Image(systemName: finished ? "checkmark.circle.fill" : "video.fill").font(.system(size: 44))
+                    Image(systemName: finished ? "checkmark.circle" : "video").font(.system(size: 44))
                     Text(recording ? "RECORDING" : finished ? "READY TO POST" : "CAMERA DEMO")
                     Text("Hold the white ring to record").font(.caption)
                 }
