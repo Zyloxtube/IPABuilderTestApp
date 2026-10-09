@@ -238,9 +238,9 @@ struct ClipPage: View {
                                 Image(systemName: "plus.circle").font(.system(size: 19)).foregroundStyle(.pink).offset(y: 8)
                             }
                         }
-                        actionButton("heart", value: isLiked ? "248.7K" : clip.likes, color: .white, gradient: isLiked, action: onLike)
+                        actionButton(isLiked ? "heart.fill" : "heart", value: isLiked ? "248.7K" : clip.likes, color: .white, gradient: isLiked, action: onLike)
                         actionButton("text.bubble", value: clip.comments, color: .white, action: onComments)
-                        actionButton("bookmark", value: isSaved ? "Saved" : "Save", color: isSaved ? Color(red: 1, green: 0.78, blue: 0.16) : .white, action: onSave)
+                        actionButton(isSaved ? "bookmark.fill" : "bookmark", value: isSaved ? "Saved" : "Save", color: isSaved ? Color(red: 1, green: 0.78, blue: 0.16) : .white, action: onSave)
                         actionButton("arrowshape.turn.up.right", value: "Share", color: .white, action: onShare)
                         Button { isMuted.toggle(); player.isMuted = isMuted } label: {
                             ZStack {
