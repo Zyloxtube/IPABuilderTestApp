@@ -76,7 +76,7 @@ struct LoopFeedView: View {
             }
             .ignoresSafeArea()
         }
-        .sheet(isPresented: $showComments) { CommentsSheet(clip: FeedClip.samples[selectedClip]) }
+        .sheet(isPresented: $showComments) { CommentsSheet(clip: FeedClip.samples[selectedClip]) }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         .sheet(isPresented: $showSearch) { SearchSheet() }
         .sheet(isPresented: $showProfile) { ProfileSheet() }
         .sheet(isPresented: $showInbox) { InboxSheet() }
@@ -168,6 +168,8 @@ struct ClipPage: View {
     @State private var player = AVPlayer()
     @State private var isPlaying = true
     @State private var videoFailed = false
+    @State private var isFollowing = false
+    @State private var isMuted = false
 
     var body: some View {
         ZStack {
@@ -204,7 +206,7 @@ struct ClipPage: View {
                             }
                             Text(clip.creator).font(.system(size: 15, weight: .bold))
                             Text("·").foregroundStyle(.white.opacity(0.6))
-                            Text("Follow").font(.system(size: 13, weight: .bold)).foregroundStyle(.cyan)
+                            Button(isFollowing ? "Following" : "Follow") { isFollowing.toggle() }.font(.system(size: 13, weight: .bold)).foregroundStyle(isFollowing ? .white.opacity(0.8) : .cyan)
                         }
                         Text(clip.caption)
                             .font(.system(size: 14, weight: .medium))
@@ -228,9 +230,9 @@ struct ClipPage: View {
                                 Image(systemName: "plus.circle.fill").font(.system(size: 19)).foregroundStyle(.pink).offset(y: 8)
                             }
                         }
-                        actionButton(isLiked ? "heart.fill" : "heart", value: isLiked ? "248.7K" : clip.likes, color: isLiked ? .pink : .white, action: onLike)
+                        actionButton("heart.fill", value: isLiked ? "248.7K" : clip.likes, color: .white, gradient: isLiked, action: onLike)
                         actionButton("bubble.right.fill", value: clip.comments, color: .white, action: onComments)
-                        actionButton(isSaved ? "bookmark.fill" : "bookmark", value: isSaved ? "Saved" : "Save", color: isSaved ? .cyan : .white, action: onSave)
+                        actionButton("bookmark.fill", value: isSaved ? "Saved" : "Save", color: isSaved ? Color(red: 1, green: 0.78, blue: 0.16) : .white, action: onSave)
                         actionButton("arrowshape.turn.up.right.fill", value: "Share", color: .white, action: onShare)
                         ZStack {
                             Circle().fill(Color.white.opacity(0.16)).frame(width: 40, height: 40)
@@ -283,38 +285,111 @@ final class PlayerView: UIView {
 
 struct CommentsSheet: View {
     let clip: FeedClip
+    @Environment(\.dismiss) private var dismiss
     @State private var comment = ""
     @State private var posted: [String] = ["This edit is everything 🔥", "needed this on my feed", "the vibes are immaculate"]
+    @State private var likedComments: Set<Int> = []
+    @FocusState private var commentFieldFocused: Bool
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                HStack {
+                HStack(spacing: 8) {
                     Image(systemName: "bubble.left.and.bubble.right.fill").foregroundStyle(.cyan)
                     Text("\(clip.comments) comments").font(.headline)
-                }.padding()
+                    Spacer()
+                    Text("Top").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                    Image(systemName: "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+
+                Divider().overlay(Color.white.opacity(0.08))
+
                 ScrollView {
-                    ForEach(Array(posted.enumerated()), id: \.offset) { _, text in
-                        HStack(alignment: .top, spacing: 10) {
-                            Circle().fill(Color.purple.gradient).frame(width: 34, height: 34).overlay(Image(systemName: "person.fill").foregroundStyle(.white))
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(["loopfan_24", "noor.exe", "pixelkid"][posted.firstIndex(of: text).map { $0 % 3 } ?? 0]).font(.caption.bold()).foregroundStyle(.secondary)
-                                Text(text)
-                                HStack(spacing: 12) { Text("2h").font(.caption2).foregroundStyle(.secondary); Image(systemName: "heart").font(.caption).foregroundStyle(.secondary); Text("Reply").font(.caption2).foregroundStyle(.secondary) }
+                    LazyVStack(spacing: 2) {
+                        ForEach(Array(posted.enumerated()), id: \.offset) { index, text in
+                            HStack(alignment: .top, spacing: 11) {
+                                Circle().fill(LinearGradient(colors: [.purple, .pink, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .frame(width: 38, height: 38)
+                                    .overlay(Image(systemName: "person.fill").font(.system(size: 15)).foregroundStyle(.white))
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(["loopfan_24", "noor.exe", "pixelkid"][index % 3])
+                                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                                    Text(text).font(.system(size: 14))
+                                    HStack(spacing: 14) {
+                                        Text("2h").font(.caption).foregroundStyle(.secondary)
+                                        Button("Reply") { comment = "@\(["loopfan_24", "noor.exe", "pixelkid"][index % 3]) "; commentFieldFocused = true }
+                                            .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                                    }.padding(.top, 2)
+                                }
+                                Spacer(minLength: 8)
+                                Button { if likedComments.contains(index) { likedComments.remove(index) } else { likedComments.insert(index) } } label: {
+                                    VStack(spacing: 4) {
+                                        Image(systemName: "heart.fill")
+                                            .font(.system(size: 15))
+                                            .foregroundStyle(likedComments.contains(index) ? AnyShapeStyle(LinearGradient(colors: [.pink, .purple, .orange], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(Color.white.opacity(0.68)))
+                                        Text(likedComments.contains(index) ? "1" : "").font(.system(size: 10)).foregroundStyle(.secondary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
                             }
-                            Spacer()
-                        }.padding(.horizontal).padding(.vertical, 10)
+                            .padding(.horizontal, 17)
+                            .padding(.vertical, 13)
+                        }
                     }
                 }
-                HStack {
-                    TextField("Add a comment…", text: $comment).textFieldStyle(.roundedBorder)
-                    Button("Post") { if !comment.trimmingCharacters(in: .whitespaces).isEmpty { posted.insert(comment, at: 0); comment = "" } }.fontWeight(.bold).foregroundStyle(.cyan)
-                }.padding()
+
+                Divider().overlay(Color.white.opacity(0.08))
+                HStack(spacing: 10) {
+                    Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 35, height: 35)
+                        .overlay(Image(systemName: "person.fill").font(.system(size: 14)).foregroundStyle(.white))
+                    HStack(spacing: 8) {
+                        TextField("Add a comment…", text: $comment, axis: .vertical)
+                            .font(.system(size: 14))
+                            .lineLimit(1...4)
+                            .focused($commentFieldFocused)
+                            .submitLabel(.send)
+                            .onSubmit(postComment)
+                        if !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Button(action: postComment) {
+                                Image(systemName: "arrow.up.circle.fill")
+                                    .font(.system(size: 27))
+                                    .foregroundStyle(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .leading, endPoint: .trailing))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 9)
+                    .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 22))
+                    Button { commentFieldFocused = false } label: {
+                        Image(systemName: "face.smiling").font(.system(size: 21)).foregroundStyle(.white.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .background(.ultraThinMaterial)
             }
-            .navigationTitle("Comments")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") {}.foregroundStyle(.cyan) } }
+            .background(Color(uiColor: .systemBackground))
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundStyle(.secondary).padding(7).background(Color.white.opacity(0.08), in: Circle()) }
+                }
+            }
+            .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
+    }
+
+    private func postComment() {
+        let clean = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        posted.insert(clean, at: 0)
+        comment = ""
+        commentFieldFocused = false
     }
 }
 
