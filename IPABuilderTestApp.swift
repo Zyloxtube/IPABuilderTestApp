@@ -78,7 +78,7 @@ struct LoopFeedView: View {
         }
         .sheet(isPresented: $showComments) { CommentsSheet(clip: FeedClip.samples[selectedClip]) }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         .sheet(isPresented: $showSearch) { SearchSheet() }
-        .sheet(isPresented: $showProfile) { ProfileSheet() }
+        .fullScreenCover(isPresented: $showProfile) { ProfileSheet() }
         .sheet(isPresented: $showInbox) { InboxSheet() }
         .sheet(isPresented: $showShare) { ShareSheet(clip: FeedClip.samples[selectedClip]) }
     }
