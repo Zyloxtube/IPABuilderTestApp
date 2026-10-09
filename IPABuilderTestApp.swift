@@ -8,7 +8,7 @@ import AVFoundation
 import CoreMedia
 
 @main
-struct IPABuilderTestApp: App {
+struct LerizApp: App {
     var body: some Scene {
         WindowGroup {
             LoopFeedView()
@@ -31,7 +31,7 @@ struct FeedClip: Identifiable {
     let symbol: String
 
     static let samples: [FeedClip] = [
-        .init(id: 1, creator: "Milo Makes", handle: "@milomakes", caption: "POV: you found the quietest place on Earth 🌊", tags: "#ocean #escape #loop", song: "original audio · milomakes", likes: "248.6K", comments: "3,842", accent: Color(red: 0.08, green: 0.72, blue: 0.79), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4", symbol: "water.waves"),
+        .init(id: 1, creator: "Milo Makes", handle: "@milomakes", caption: "POV: you found the quietest place on Earth 🌊", tags: "#ocean #escape #leriz", song: "original audio · milomakes", likes: "248.6K", comments: "3,842", accent: Color(red: 0.08, green: 0.72, blue: 0.79), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4", symbol: "water.waves"),
         .init(id: 2, creator: "Pixel Planet", handle: "@pixelplanet", caption: "The internet is a very strange place. Stay curious.", tags: "#weird #internet #facts", song: "NEON DREAMS · pixelplanet", likes: "91.2K", comments: "1,204", accent: Color(red: 0.57, green: 0.27, blue: 0.96), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", symbol: "sparkles"),
         .init(id: 3, creator: "Weekend Frames", handle: "@weekendframes", caption: "A tiny reminder to go outside today ☀️", tags: "#weekend #travel #vibes", song: "soft focus · weekendframes", likes: "512K", comments: "8,091", accent: Color(red: 1.0, green: 0.42, blue: 0.29), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", symbol: "sun.max"),
         .init(id: 4, creator: "The Daily Loop", handle: "@thedailyloop", caption: "This is your sign to try something new.", tags: "#motivation #tryit #fyp", song: "little by little · thedailyloop", likes: "76.4K", comments: "976", accent: Color(red: 0.20, green: 0.79, blue: 0.53), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4", symbol: "bolt")
@@ -87,7 +87,7 @@ struct LoopFeedView: View {
         .sheet(isPresented: $showSearch) { SearchSheet() }
         .fullScreenCover(isPresented: $showProfile) { ProfileSheet() }
         .fullScreenCover(isPresented: $showCreate) { CreateVideoPage { caption, recordedURL in
-            let clip = FeedClip(id: (clips.map(\.id).max() ?? 0) + 1, creator: "Your Loop", handle: "@yourloop", caption: caption.isEmpty ? "My new Loop ✨" : caption, tags: "#loop #newpost", song: "original audio · yourloop", likes: "0", comments: "0", accent: .purple, videoURL: recordedURL.absoluteString, symbol: "person")
+            let clip = FeedClip(id: (clips.map(\.id).max() ?? 0) + 1, creator: "Your Leriz", handle: "@yourleriz", caption: caption.isEmpty ? "My new Leriz ✨" : caption, tags: "#leriz #newpost", song: "original audio · yourloop", likes: "0", comments: "0", accent: .purple, videoURL: recordedURL.absoluteString, symbol: "person")
             clips.insert(clip, at: 0)
             selectedClip = 0
             showCreate = false
@@ -102,7 +102,7 @@ struct LoopFeedView: View {
                 Image(systemName: "infinity")
                     .font(.system(size: 25, weight: .regular))
                     .foregroundStyle(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
-                Text("loop")
+                Text("Leriz")
                     .font(.system(size: 25, weight: .black, design: .rounded))
                     .tracking(-1.2)
             }
@@ -475,9 +475,9 @@ struct ProfileSheet: View {
                         Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
                             .frame(width: 88, height: 88).overlay(Image(systemName: "person").font(.system(size: 40)))
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Your Loop").font(.title3.bold())
-                            Text("@yourloop").font(.subheadline).foregroundStyle(.secondary)
-                            Text("Creator on Loop").font(.caption).foregroundStyle(.secondary)
+                            Text("Your Leriz").font(.title3.bold())
+                            Text("@yourleriz").font(.subheadline).foregroundStyle(.secondary)
+                            Text("Creator on Leriz").font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                     }.padding(.horizontal, 18).padding(.top, 15)
@@ -490,7 +490,7 @@ struct ProfileSheet: View {
                         Button { showEdit = true } label: { Text("Edit profile").font(.system(size: 14, weight: .bold)).frame(maxWidth: .infinity).padding(12).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
                         Button {} label: { Image(systemName: "person.badge.plus").frame(width: 46, height: 42).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
                     }.padding(.horizontal, 18)
-                    Text("Making little moments loop forever.").font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
+                    Text("Capture your world, your way.").font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
                     HStack(spacing: 0) {
                         tab("square.grid.2x2", 0)
                         tab("heart", 1)
@@ -523,9 +523,9 @@ struct ProfileSheet: View {
 
 struct EditProfileDemo: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var name = "Your Loop"
-    @State private var username = "yourloop"
-    @State private var bio = "Making little moments loop forever."
+    @State private var name = "Your Leriz"
+    @State private var username = "yourleriz"
+    @State private var bio = "Capture your world, your way."
     var body: some View {
         NavigationStack {
             Form {
@@ -541,7 +541,7 @@ struct InboxSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                inboxRow("sparkles", "Welcome to loop", "Your new scroll starts here.", "Now", .cyan)
+                inboxRow("sparkles", "Welcome to Leriz", "Your new scroll starts here.", "Now", .cyan)
                 inboxRow("heart", "Activity", "When people like your videos, you'll see it here.", "Today", .pink)
                 inboxRow("person.2", "New creators", "Find your next favorite creator.", "Today", .purple)
             }
@@ -567,14 +567,14 @@ struct ShareSheet: View {
         NavigationStack {
             VStack(spacing: 22) {
                 Image(systemName: "paperplane").font(.system(size: 38)).foregroundStyle(.cyan).padding(.top, 30)
-                Text("Share this loop").font(.title2.bold())
+                Text("Share this Leriz video").font(.title2.bold())
                 Text(clip.caption).multilineTextAlignment(.center).foregroundStyle(.secondary).padding(.horizontal)
                 HStack(spacing: 24) {
                     shareTarget("message", "Messages", .green)
                     shareTarget("link", "Copy link", .cyan)
                     shareTarget("square.and.arrow.up", "More", .purple)
                 }
-                Button { UIPasteboard.general.string = "https://loop.demo/video/\(clip.id)"; copied = true } label: {
+                Button { UIPasteboard.general.string = "https://leriz.demo/video/\(clip.id)"; copied = true } label: {
                     Label(copied ? "Link copied" : "Copy demo link", systemImage: copied ? "checkmark.circle" : "doc.on.doc")
                         .fontWeight(.bold).frame(maxWidth: .infinity).padding(15).background(Color.cyan.opacity(0.16), in: RoundedRectangle(cornerRadius: 14))
                 }.padding(.horizontal)
@@ -683,7 +683,7 @@ struct CreateVideoPage: View {
 
                 HStack {
                     Button {
-                        permissionMessage = "Use the front camera to record a Loop."
+                        permissionMessage = "Use the front camera to record a Leriz video."
                     } label: {
                         Image(systemName: "arrow.triangle.2.circlepath.camera").font(.system(size: 23))
                             .foregroundStyle(.white).frame(width: 54, height: 58)
@@ -731,7 +731,7 @@ struct CreateVideoPage: View {
                         }
                     }
                     Section {
-                        Button("Post to Loop") {
+                        Button("Post to Leriz") {
                             guard let url = recordedURL else { return }
                             onPost(caption, url)
                         }.fontWeight(.bold).disabled(recordedURL == nil)
@@ -979,7 +979,7 @@ final class LoopScreenRecorder: ObservableObject {
         guard writer == nil,
               let description = CMSampleBufferGetFormatDescription(sample) else { return }
         let dimensions = CMVideoFormatDescriptionGetDimensions(description)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Loop-\(UUID().uuidString).mp4")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Leriz-\(UUID().uuidString).mp4")
         do {
             let assetWriter = try AVAssetWriter(outputURL: url, fileType: .mp4)
             let video = AVAssetWriterInput(mediaType: .video, outputSettings: [
