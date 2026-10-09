@@ -34,6 +34,7 @@ struct FeedClip: Identifiable {
 }
 
 struct LoopFeedView: View {
+    @State private var clips = FeedClip.samples
     @State private var selectedClip = 0
     @State private var showCreate = false
     @State private var likedIDs: Set<Int> = []
@@ -50,7 +51,7 @@ struct LoopFeedView: View {
             Color.black.ignoresSafeArea()
             GeometryReader { geometry in
                 TabView(selection: $selectedClip) {
-                    ForEach(Array(FeedClip.samples.enumerated()), id: \.element.id) { index, clip in
+                    ForEach(Array(clips.enumerated()), id: \.element.id) { index, clip in
                         ClipPage(
                             clip: clip,
                             isActive: selectedClip == index,
@@ -77,7 +78,7 @@ struct LoopFeedView: View {
             }
             .ignoresSafeArea()
         }
-        .sheet(isPresented: $showComments) { CommentsSheet(clip: FeedClip.samples[selectedClip]) }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        .sheet(isPresented: $showComments) { CommentsSheet(clip: clips[selectedClip]) }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         .sheet(isPresented: $showSearch) { SearchSheet() }
         .fullScreenCover(isPresented: $showProfile) { ProfileSheet() }
         .sheet(isPresented: $showInbox) { InboxSheet() }
