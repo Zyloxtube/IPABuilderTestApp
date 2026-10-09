@@ -17,5 +17,8 @@ targets:
         SWIFT_VERSION: "5.0"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Loop
+        INFOPLIST_KEY_NSCameraUsageDescription: Loop uses the front camera for face effects and video recording.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Loop records microphone audio with your videos.
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Loop can save recorded videos to your Photos library.
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         CODE_SIGNING_ALLOWED: NO
