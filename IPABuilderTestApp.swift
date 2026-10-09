@@ -574,3 +574,53 @@ struct ShareSheet: View {
         VStack(spacing: 8) { Image(systemName: icon).font(.system(size: 22)).foregroundStyle(color).frame(width: 58, height: 58).background(color.opacity(0.14), in: Circle()); Text(title).font(.caption) }
     }
 }
+
+struct CreateVideoPage: View {
+    let onPost: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var caption = ""
+    @State private var selected = 0
+    @State private var recording = false
+    @State private var finished = false
+    @State private var showPost = false
+    private let names = ["Normal", "Glow", "Ocean", "Dream", "Sunset", "Mono"]
+    private let colors: [Color] = [.clear, .pink, .cyan, .purple, .orange, .gray]
+    var body: some View {
+        VStack(spacing: 18) {
+            HStack { Button("Cancel") { dismiss() }; Spacer(); Text("Create").bold(); Spacer(); Button("Next") { showPost = true }.disabled(!finished) }
+                .padding()
+            ZStack {
+                LinearGradient(colors: [colors[selected].opacity(0.7), .black, colors[selected].opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                VStack(spacing: 12) {
+                    Image(systemName: finished ? "checkmark.circle.fill" : "video.fill").font(.system(size: 44))
+                    Text(recording ? "RECORDING" : finished ? "READY TO POST" : "CAMERA DEMO")
+                    Text("Hold the white ring to record").font(.caption)
+                }
+            }.foregroundStyle(.white).clipShape(RoundedRectangle(cornerRadius: 20)).padding(.horizontal, 12).frame(maxHeight: .infinity)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack { ForEach(names.indices, id: \.self) { i in
+                    Button { selected = i } label: { VStack { Circle().fill(colors[i].opacity(0.9)).frame(width: 48, height: 48).overlay(Circle().stroke(selected == i ? .white : .gray, lineWidth: 2)); Text(names[i]).font(.caption2) }.foregroundStyle(.white) }
+                } }.padding(.horizontal)
+            }
+            HStack {
+                Image(systemName: "photo.on.rectangle").font(.title2)
+                Spacer()
+                Circle().fill(.white).frame(width: 82, height: 82).overlay(Circle().fill(.black).frame(width: 68, height: 68)).overlay(Circle().stroke(.white, lineWidth: 4).frame(width: 74, height: 74)).overlay(Circle().fill(recording ? .red : .white).frame(width: 52, height: 52).scaleEffect(recording ? 0.6 : 1))
+                    .onLongPressGesture(minimumDuration: 0.35, pressing: { down in
+                        if down { recording = true; finished = false } else if recording { recording = false; finished = true }
+                    }, perform: {})
+                Spacer()
+                Image(systemName: "sparkles").font(.title2)
+            }.padding(.horizontal, 36)
+            Text("Demo only — video capture is simulated").font(.caption2).foregroundStyle(.secondary).padding(.bottom, 15)
+        }.background(Color.black.ignoresSafeArea()).preferredColorScheme(.dark)
+        .sheet(isPresented: $showPost) {
+            NavigationStack {
+                Form {
+                    Section("Post") { TextField("Write a caption…", text: $caption, axis: .vertical); LabeledContent("Filter", value: names[selected]) }
+                    Section { Text("This demo adds a sample post to the feed; it does not upload real footage.").font(.caption).foregroundStyle(.secondary); Button("Post to Loop") { onPost(caption) }.fontWeight(.bold) }
+                }.navigationTitle("New post")
+            }.preferredColorScheme(.dark)
+        }
+    }
+}
