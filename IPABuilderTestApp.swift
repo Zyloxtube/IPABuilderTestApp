@@ -85,7 +85,7 @@ struct LoopFeedView: View {
         HStack(spacing: 17) {
             HStack(spacing: 5) {
                 Image(systemName: "infinity")
-                    .font(.system(size: 25, weight: .black))
+                    .font(.system(size: 25, weight: .regular))
                     .foregroundStyle(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
                 Text("loop")
                     .font(.system(size: 25, weight: .black, design: .rounded))
@@ -106,7 +106,7 @@ struct LoopFeedView: View {
                 }
             }
             Button { showSearch = true } label: {
-                Image(systemName: "magnifyingglass").font(.system(size: 21, weight: .semibold)).foregroundStyle(.white)
+                Image(systemName: "magnifyingglass").font(.system(size: 20, weight: .regular)).foregroundStyle(.white)
             }
         }
         .padding(.horizontal, 18)
@@ -124,7 +124,7 @@ struct LoopFeedView: View {
             Button { showShare = true } label: {
                 ZStack {
                     RoundedRectangle(cornerRadius: 9).fill(LinearGradient(colors: [.cyan, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 43, height: 31)
-                    Image(systemName: "plus").font(.system(size: 18, weight: .black)).foregroundStyle(.white)
+                    Image(systemName: "plus").font(.system(size: 18, weight: .medium)).foregroundStyle(.white)
                 }
             }
             Spacer()
@@ -141,7 +141,7 @@ struct LoopFeedView: View {
     private func navButton(_ symbol: String, title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 5) {
-                Image(systemName: symbol).font(.system(size: 21, weight: selected ? .bold : .regular))
+                Image(systemName: symbol).font(.system(size: 21, weight: .regular))
                 Text(title).font(.system(size: 10, weight: selected ? .bold : .medium))
             }
             .foregroundStyle(selected ? .white : .white.opacity(0.68))
@@ -256,7 +256,7 @@ struct ClipPage: View {
     private func actionButton(_ symbol: String, value: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 27, weight: .semibold)).foregroundStyle(color).shadow(color: .black.opacity(0.25), radius: 4)
+                Image(systemName: symbol).font(.system(size: 25, weight: .regular)).foregroundStyle(color).shadow(color: .black.opacity(0.25), radius: 4)
                 Text(value).font(.system(size: 10, weight: .bold)).foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.75)
             }
         }
