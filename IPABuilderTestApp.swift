@@ -47,32 +47,34 @@ struct LoopFeedView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            TabView(selection: $selectedClip) {
-                ForEach(Array(FeedClip.samples.enumerated()), id: \.element.id) { index, clip in
-                    ClipPage(
-                        clip: clip,
-                        isActive: selectedClip == index,
-                        isLiked: likedIDs.contains(clip.id),
-                        isSaved: savedIDs.contains(clip.id),
-                        onLike: { toggle(clip.id, in: &likedIDs) },
-                        onSave: { toggle(clip.id, in: &savedIDs) },
-                        onComments: { showComments = true },
-                        onShare: { showShare = true },
-                        onProfile: { showProfile = true }
-                    )
-                    .tag(index)
-                    .ignoresSafeArea()
+            GeometryReader { geometry in
+                TabView(selection: $selectedClip) {
+                    ForEach(Array(FeedClip.samples.enumerated()), id: \.element.id) { index, clip in
+                        ClipPage(
+                            clip: clip,
+                            isActive: selectedClip == index,
+                            isLiked: likedIDs.contains(clip.id),
+                            isSaved: savedIDs.contains(clip.id),
+                            onLike: { toggle(clip.id, in: &likedIDs) },
+                            onSave: { toggle(clip.id, in: &savedIDs) },
+                            onComments: { showComments = true },
+                            onShare: { showShare = true },
+                            onProfile: { showProfile = true }
+                        )
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .rotationEffect(.degrees(-90))
+                        .tag(index)
+                    }
                 }
+                .frame(width: geometry.size.height, height: geometry.size.width)
+                .rotationEffect(.degrees(90))
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .ignoresSafeArea()
+                .overlay(alignment: .top) { topBar }
+                .overlay(alignment: .bottom) { bottomBar }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
             .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                topBar
-                Spacer()
-                bottomBar
-            }
-            .ignoresSafeArea(edges: .bottom)
         }
         .sheet(isPresented: $showComments) { CommentsSheet(clip: FeedClip.samples[selectedClip]) }
         .sheet(isPresented: $showSearch) { SearchSheet() }
