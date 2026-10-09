@@ -35,6 +35,7 @@ struct FeedClip: Identifiable {
 
 struct LoopFeedView: View {
     @State private var selectedClip = 0
+    @State private var showCreate = false
     @State private var likedIDs: Set<Int> = []
     @State private var savedIDs: Set<Int> = []
     @State private var selectedTab = "For You"
