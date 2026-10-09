@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import UIKit
 
 @main
 struct IPABuilderTestApp: App {
