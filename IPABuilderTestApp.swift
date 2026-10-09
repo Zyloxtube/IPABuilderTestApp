@@ -11,7 +11,7 @@ import CoreMedia
 struct LerizApp: App {
     var body: some Scene {
         WindowGroup {
-            LoopFeedView()
+            LerizLaunchView()
                 .preferredColorScheme(.dark)
         }
     }
@@ -36,6 +36,168 @@ struct FeedClip: Identifiable {
         .init(id: 3, creator: "Weekend Frames", handle: "@weekendframes", caption: "A tiny reminder to go outside today ☀️", tags: "#weekend #travel #vibes", song: "soft focus · weekendframes", likes: "512K", comments: "8,091", accent: Color(red: 1.0, green: 0.42, blue: 0.29), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", symbol: "sun.max"),
         .init(id: 4, creator: "The Daily Loop", handle: "@thedailyloop", caption: "This is your sign to try something new.", tags: "#motivation #tryit #fyp", song: "little by little · thedailyloop", likes: "76.4K", comments: "976", accent: Color(red: 0.20, green: 0.79, blue: 0.53), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4", symbol: "bolt")
     ]
+}
+
+
+struct LerizLaunchView: View {
+    @State private var isSignUp = false
+    @State private var email = ""
+    @State private var password = ""
+    @State private var username = ""
+    @State private var isLoading = false
+    @State private var showWelcome = false
+    @State private var enterApp = false
+
+    var body: some View {
+        ZStack {
+            if enterApp {
+                LoopFeedView()
+                    .transition(.opacity)
+            } else if showWelcome {
+                welcomeScreen
+                    .transition(.opacity)
+            } else {
+                authScreen
+                    .transition(.opacity)
+            }
+        }
+        .background(Color.black.ignoresSafeArea())
+        .preferredColorScheme(.dark)
+    }
+
+    private var authScreen: some View {
+        ZStack {
+            LinearGradient(colors: [Color(red: 0.10, green: 0.04, blue: 0.22), .black, Color(red: 0.02, green: 0.13, blue: 0.18)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .ignoresSafeArea()
+            Circle().fill(.purple.opacity(0.20)).frame(width: 260).blur(radius: 75).offset(x: 130, y: -270)
+            Circle().fill(.cyan.opacity(0.14)).frame(width: 250).blur(radius: 80).offset(x: -150, y: 250)
+            VStack(spacing: 0) {
+                Spacer(minLength: 24)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 25).fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 76, height: 76)
+                    Image(systemName: "infinity").font(.system(size: 42, weight: .medium)).foregroundStyle(.white)
+                }
+                .shadow(color: .purple.opacity(0.35), radius: 25, y: 8)
+                Text("Leriz").font(.system(size: 38, weight: .black, design: .rounded)).tracking(-1.5).padding(.top, 15)
+                Text("Your world. In motion.").font(.system(size: 15, weight: .medium)).foregroundStyle(.white.opacity(0.60)).padding(.top, 5)
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(spacing: 0) {
+                        authModeButton("Log in", selected: !isSignUp) { withAnimation(.easeInOut(duration: 0.22)) { isSignUp = false } }
+                        authModeButton("Sign up", selected: isSignUp) { withAnimation(.easeInOut(duration: 0.22)) { isSignUp = true } }
+                    }
+                    if isSignUp {
+                        authField(title: "Username", placeholder: "Choose a username", text: $username, symbol: "person")
+                    }
+                    authField(title: "Email", placeholder: "you@example.com", text: $email, symbol: "envelope", isEmail: true)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("PASSWORD").font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundStyle(.white.opacity(0.58))
+                        HStack(spacing: 11) {
+                            Image(systemName: "lock").foregroundStyle(.white.opacity(0.55)).frame(width: 20)
+                            SecureField("Enter your password", text: $password).textContentType(isSignUp ? .newPassword : .password).autocorrectionDisabled()
+                        }
+                        .padding(.horizontal, 15).frame(height: 54)
+                        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 15))
+                        .overlay(RoundedRectangle(cornerRadius: 15).stroke(.white.opacity(0.10), lineWidth: 1))
+                    }
+                    Button(action: startDemo) {
+                        HStack(spacing: 10) {
+                            if isLoading {
+                                ProgressView().tint(.white)
+                                Text("Getting things ready…")
+                            } else {
+                                Text(isSignUp ? "Create account" : "Log in")
+                                Image(systemName: "arrow.right").font(.system(size: 14, weight: .bold))
+                            }
+                        }
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity).frame(height: 56)
+                        .background(LinearGradient(colors: [.cyan.opacity(0.95), .purple, .pink.opacity(0.95)], startPoint: .leading, endPoint: .trailing), in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .disabled(isLoading)
+                    Text("DEMO MODE · No account is created and no data is sent.")
+                        .font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.42))
+                        .multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(.top, 1)
+                }
+                .padding(22)
+                .background(.ultraThinMaterial.opacity(0.45), in: RoundedRectangle(cornerRadius: 26))
+                .overlay(RoundedRectangle(cornerRadius: 26).stroke(.white.opacity(0.10), lineWidth: 1))
+                .padding(.horizontal, 22).padding(.top, 34)
+                Spacer(minLength: 30)
+                Text("MAKE EVERY MOMENT YOURS")
+                    .font(.system(size: 10, weight: .bold)).tracking(2.2).foregroundStyle(.white.opacity(0.35)).padding(.bottom, 20)
+            }
+        }
+    }
+
+    private var welcomeScreen: some View {
+        ZStack {
+            LinearGradient(colors: [Color(red: 0.05, green: 0.02, blue: 0.13), .black, Color(red: 0.01, green: 0.12, blue: 0.16)], startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
+            Circle().fill(.purple.opacity(0.28)).frame(width: 300).blur(radius: 80).offset(x: -90, y: -120)
+            Circle().fill(.cyan.opacity(0.24)).frame(width: 280).blur(radius: 80).offset(x: 120, y: 160)
+            VStack(spacing: 18) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 32).fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 108, height: 108)
+                    Image(systemName: "infinity").font(.system(size: 61, weight: .medium)).foregroundStyle(.white)
+                }
+                .shadow(color: .purple.opacity(0.45), radius: 35, y: 10)
+                Text("Welcome to Leriz")
+                    .font(.system(size: 34, weight: .black, design: .rounded)).tracking(-1).multilineTextAlignment(.center)
+                Text("A whole world of videos is waiting for you.")
+                    .font(.system(size: 15, weight: .medium)).foregroundStyle(.white.opacity(0.66)).multilineTextAlignment(.center)
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles").foregroundStyle(.cyan)
+                    Text("Find your next favorite moment").foregroundStyle(.white.opacity(0.8))
+                }.font(.system(size: 13, weight: .medium)).padding(.top, 5)
+                ProgressView().tint(.white).padding(.top, 25)
+            }
+            .padding(.horizontal, 30)
+        }
+    }
+
+    private func authModeButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.system(size: 14, weight: .bold))
+                .foregroundStyle(selected ? .white : .white.opacity(0.48))
+                .frame(maxWidth: .infinity).frame(height: 43)
+                .background {
+                    if selected { RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.12)) }
+                }
+        }.buttonStyle(.plain)
+    }
+
+    private func authField(title: String, placeholder: String, text: Binding<String>, symbol: String, isEmail: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased()).font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundStyle(.white.opacity(0.58))
+            HStack(spacing: 11) {
+                Image(systemName: symbol).foregroundStyle(.white.opacity(0.55)).frame(width: 20)
+                TextField(placeholder, text: text)
+                    .keyboardType(isEmail ? .emailAddress : .default)
+                    .textContentType(isEmail ? .emailAddress : .username)
+                    .textInputAutocapitalization(isEmail ? .never : .words)
+                    .autocorrectionDisabled()
+            }
+            .padding(.horizontal, 15).frame(height: 54)
+            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 15))
+            .overlay(RoundedRectangle(cornerRadius: 15).stroke(.white.opacity(0.10), lineWidth: 1))
+        }
+    }
+
+    private func startDemo() {
+        guard !isLoading else { return }
+        isLoading = true
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation(.easeInOut(duration: 0.65)) {
+                isLoading = false
+                showWelcome = true
+            }
+            try? await Task.sleep(nanoseconds: 1_700_000_000)
+            withAnimation(.easeInOut(duration: 1.0)) {
+                enterApp = true
+            }
+        }
+    }
 }
 
 struct LoopFeedView: View {
