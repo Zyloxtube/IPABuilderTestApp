@@ -1,3 +1,4 @@
+# Manual dispatch is enabled; pushes to main also build the unsigned IPA.
 name: Build iOS IPA
 
 on:
