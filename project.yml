@@ -8,7 +8,7 @@ targets:
     type: application
     platform: iOS
     sources:
-      - main.swift
+      - IPABuilderTestApp.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zyloxtube.ipabuildertestapp
