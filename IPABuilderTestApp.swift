@@ -131,7 +131,7 @@ struct LoopFeedView: View {
             Spacer()
             navButton("safari", title: "Discover", selected: false) { showSearch = true }
             Spacer()
-            Button { showShare = true } label: {
+            Button { showCreate = true } label: {
                 ZStack {
                     RoundedRectangle(cornerRadius: 9).fill(LinearGradient(colors: [.cyan, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 43, height: 31)
                     Image(systemName: "plus").font(.system(size: 18, weight: .medium)).foregroundStyle(.white)
