@@ -81,8 +81,14 @@ struct LoopFeedView: View {
         .sheet(isPresented: $showComments) { CommentsSheet(clip: clips[selectedClip]) }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         .sheet(isPresented: $showSearch) { SearchSheet() }
         .fullScreenCover(isPresented: $showProfile) { ProfileSheet() }
+        .fullScreenCover(isPresented: $showCreate) { CreateVideoPage { caption in
+            let clip = FeedClip(id: (clips.map(\.id).max() ?? 0) + 1, creator: "Your Loop", handle: "@yourloop", caption: caption.isEmpty ? "My new Loop ✨" : caption, tags: "#loop #newpost", song: "original audio · yourloop", likes: "0", comments: "0", accent: .purple, videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4", symbol: "person.fill")
+            clips.insert(clip, at: 0)
+            selectedClip = 0
+            showCreate = false
+        } }
         .sheet(isPresented: $showInbox) { InboxSheet() }
-        .sheet(isPresented: $showShare) { ShareSheet(clip: FeedClip.samples[selectedClip]) }
+        .sheet(isPresented: $showShare) { ShareSheet(clip: clips[selectedClip]) }
     }
 
     private var topBar: some View {
