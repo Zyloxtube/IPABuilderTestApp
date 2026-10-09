@@ -261,10 +261,20 @@ struct ClipPage: View {
         .onAppear { if isActive { player.play() } }
     }
 
-    private func actionButton(_ symbol: String, value: String, color: Color, action: @escaping () -> Void) -> some View {
+    private func actionButton(_ symbol: String, value: String, color: Color, gradient: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 25, weight: .regular)).foregroundStyle(color).shadow(color: .black.opacity(0.25), radius: 4)
+                if gradient {
+                    Image(systemName: symbol)
+                        .font(.system(size: 25, weight: .regular))
+                        .foregroundStyle(LinearGradient(colors: [.pink, .purple, .orange], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .shadow(color: .black.opacity(0.25), radius: 4)
+                } else {
+                    Image(systemName: symbol)
+                        .font(.system(size: 25, weight: .regular))
+                        .foregroundStyle(color)
+                        .shadow(color: .black.opacity(0.25), radius: 4)
+                }
                 Text(value).font(.system(size: 10, weight: .bold)).foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.75)
             }
         }
