@@ -234,10 +234,14 @@ struct ClipPage: View {
                         actionButton("bubble.right.fill", value: clip.comments, color: .white, action: onComments)
                         actionButton("bookmark.fill", value: isSaved ? "Saved" : "Save", color: isSaved ? Color(red: 1, green: 0.78, blue: 0.16) : .white, action: onSave)
                         actionButton("arrowshape.turn.up.right.fill", value: "Share", color: .white, action: onShare)
-                        ZStack {
-                            Circle().fill(Color.white.opacity(0.16)).frame(width: 40, height: 40)
-                            Image(systemName: "opticaldisc.fill").font(.system(size: 27)).foregroundStyle(.white)
+                        Button { isMuted.toggle(); player.isMuted = isMuted } label: {
+                            ZStack {
+                                Circle().fill(Color.white.opacity(0.16)).frame(width: 40, height: 40)
+                                Image(systemName: "opticaldisc.fill").font(.system(size: 27, weight: .regular)).foregroundStyle(.white)
+                                if isMuted { Image(systemName: "speaker.slash.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(.yellow).offset(x: 13, y: 13) }
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
                     .frame(width: 54)
                 }
