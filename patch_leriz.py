@@ -392,9 +392,26 @@ r'''            self.movieOutput.startRecording(to: url, recordingDelegate: self
 "recording start remains on capture queue"
 )
 
-p.write_text(s, encoding="utf-8")
-print("Leriz client patches applied.")
-
+# Keep the CommentsSheet body type-checkable and use its supplied dismiss callback.
+comments_type_start = s.index("struct CommentsSheet: View {")
+comments_type_end = s.index("    private func toggleCommentLike", comments_type_start)
+comments_type_body = s[comments_type_start:comments_type_end]
+comments_type_body = comments_type_body.replace(
+    "    var body: some View {\n        NavigationStack {",
+    "    var body: some View {\n        AnyView(NavigationStack {",
+    1
+)
+comments_type_body = comments_type_body.replace(
+    "Button { dismiss() } label: { Image(systemName: \"xmark\")",
+    "Button { onDismiss() } label: { Image(systemName: \"xmark\")",
+    1
+)
+comments_type_body = comments_type_body.replace(
+    "        .onAppear {\n            let saved = (try? JSONDecoder().decode([String].self, from: Data(likedCommentIDsJSON.utf8))) ?? []\n            likedComments = Set(saved)\n        }\n    }\n\n",
+    "        .onAppear {\n            let saved = (try? JSONDecoder().decode([String].self, from: Data(likedCommentIDsJSON.utf8))) ?? []\n            likedComments = Set(saved)\n        }\n    })\n    }\n\n",
+    1
+)
+s = s[:comments_type_start] + comments_type_body + s[comments_type_end:]
 
 p.write_text(s, encoding="utf-8")
 print("Leriz client patches applied.")
