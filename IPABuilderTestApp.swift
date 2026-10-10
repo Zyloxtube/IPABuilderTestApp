@@ -1227,7 +1227,7 @@ struct CommentsSheet: View {
                     let value = row["parentID"] ?? row["parentId"]
                     return value as? String
                 }
-                commentEdited = rows.map { $0["edited"] as? Bool ?? false }
+                commentEdited = orderedRows.map { $0["edited"] as? Bool ?? false }
                 commentError = ""
             }
         } catch {
