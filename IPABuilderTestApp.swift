@@ -2078,7 +2078,7 @@ struct ProfileSheet: View {
             } message: {
                 Text("This video will be permanently removed from your profile.")
             }
-            .alert("Account action failed", isPresented: Binding(get: { !showDeleteError.isEmpty }, set: { if !$0 { showDeleteError = "" } }))
+            .alert("Account action failed", isPresented: Binding(get: { !showDeleteError.isEmpty }, set: { if !$0 { showDeleteError = "" } })) {
                 Button("OK", role: .cancel) { showDeleteError = "" }
             } message: { Text(showDeleteError) }
             .onChange(of: selectedAvatar) { item in
