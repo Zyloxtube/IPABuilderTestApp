@@ -232,6 +232,12 @@ r'''                commentParentIDs = orderedRows.map { row in''',
 )
 
 sub(
+r'''                commentAvatarURLs = rows.map { row in''',
+r'''                commentAvatarURLs = orderedRows.map { row in''',
+"ordered comment avatars"
+)
+
+sub(
 r'''    @State private var showCreateHashtag = false
     @State private var showHashtagSearch = false''',
 r'''    @State private var showCreateHashtag = false
