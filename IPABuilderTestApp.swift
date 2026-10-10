@@ -2914,7 +2914,6 @@ struct VideoEditorView: View {
                                     .font(.subheadline.weight(.semibold))
                                 TextField("Add text overlay…", text: $text, axis: .vertical)
                                     .textFieldStyle(.roundedBorder)
-                                    .onChange(of: text) { _ in updateHashtagSuggestions() }
                                 Button { showTextTools = true } label: {
                                     Label("Text style", systemImage: "textformat")
                                         .font(.subheadline.weight(.semibold))
@@ -3033,9 +3032,9 @@ struct VideoEditorView: View {
     }
 
     private func updateHashtagSuggestions() {
-        guard let hash = text.lastIndex(of: "#") else { activeHashtag = ""; hashtagMatches = []; return }
-        let start = text.index(after: hash)
-        let suffix = text[start...]
+        guard let hash = caption.lastIndex(of: "#") else { activeHashtag = ""; hashtagMatches = []; return }
+        let start = caption.index(after: hash)
+        let suffix = caption[start...]
         guard !suffix.contains(where: { $0.isWhitespace || $0 == "#" }) else { activeHashtag = ""; hashtagMatches = []; return }
         let prefix = String(suffix)
         guard !prefix.isEmpty else { activeHashtag = ""; hashtagMatches = []; return }
@@ -3050,11 +3049,11 @@ struct VideoEditorView: View {
 
     private func insertHashtag(_ value: String) {
         let tag = value.hasPrefix("#") ? value : "#\(value)"
-        guard let hash = text.lastIndex(of: "#") else { text += " " + tag + " "; activeHashtag = ""; return }
-        let start = text.index(after: hash)
-        let suffix = text[start...]
-        let end = suffix.firstIndex(where: { $0.isWhitespace || $0 == "#" }) ?? text.endIndex
-        text.replaceSubrange(hash..<end, with: tag + " ")
+        guard let hash = caption.lastIndex(of: "#") else { caption += " " + tag + " "; activeHashtag = ""; return }
+        let start = caption.index(after: hash)
+        let suffix = caption[start...]
+        let end = suffix.firstIndex(where: { $0.isWhitespace || $0 == "#" }) ?? caption.endIndex
+        caption.replaceSubrange(hash..<end, with: tag + " ")
         activeHashtag = ""
         hashtagMatches = []
     }
