@@ -17,6 +17,9 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Apply Leriz client fixes
+        run: python3 patch_leriz.py
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
