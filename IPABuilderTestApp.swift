@@ -247,6 +247,16 @@ struct FeedClip: Identifiable {
     var initiallyLiked = false
     var initiallySaved = false
 
+    private static let metadataMarker = "\u{001E}LERIZ_TITLE:"
+    var title: String {
+        guard caption.hasPrefix(Self.metadataMarker), let end = caption.firstIndex(of: "\n") else { return "" }
+        return String(caption[caption.index(caption.startIndex, offsetBy: Self.metadataMarker.count)..<end])
+    }
+    var descriptionText: String {
+        guard caption.hasPrefix(Self.metadataMarker), let end = caption.firstIndex(of "\n") else { return caption }
+        return String(caption[caption.index(after: end)...])
+    }
+
     var serverID: String? {
         guard let url = URL(string: videoURL) else { return nil }
         let parts = url.pathComponents
@@ -824,9 +834,10 @@ struct ClipPage: View {
     @State private var isMuted = false
     @State private var tappedHashtag = ""
     @State private var showHashtagPage = false
+    @State private var captionExpanded = false
 
     private var captionHashtags: [String] {
-        clip.caption.split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "_" && $0 != "#" })
+        clip.descriptionText.split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "_" && $0 != "#" })
             .filter { $0.hasPrefix("#") && $0.count > 1 }
             .map { String($0.dropFirst()) }
     }
@@ -915,10 +926,39 @@ struct ClipPage: View {
                                 .buttonStyle(.plain)
                             }
                         }
-                        Text(clip.caption)
-                            .font(.system(size: 14, weight: .medium))
-                            .lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
+                        if !clip.title.isEmpty {
+                            Text(clip.title)
+                                .font(.system(size: 15, weight: .bold))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if !clip.descriptionText.isEmpty {
+                            if captionExpanded {
+                                ScrollView(.vertical, showsIndicators: true) {
+                                    Text(clip.descriptionText)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .lineSpacing(3)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .frame(maxHeight: 7 * 23)
+                                .overlay(alignment: .topTrailing) {
+                                    Button { withAnimation(.easeInOut(duration: 0.2)) { captionExpanded = false } } label: {
+                                        Text("Less").font(.system(size: 12, weight: .bold)).foregroundStyle(.cyan)
+                                    }.buttonStyle(.plain)
+                                }
+                            } else {
+                                HStack(spacing: 4) {
+                                    Text(String(clip.descriptionText.prefix(30)) + (clip.descriptionText.count > 30 ? "..." : ""))
+                                        .font(.system(size: 14, weight: .medium))
+                                        .lineLimit(1)
+                                    if clip.descriptionText.count > 30 {
+                                        Button { withAnimation(.easeInOut(duration: 0.2)) { captionExpanded = true } } label: {
+                                            Text("Read more").font(.system(size: 13, weight: .bold)).foregroundStyle(.cyan)
+                                        }.buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
                         if !captionHashtags.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 7) {
@@ -2532,6 +2572,11 @@ struct CreateVideoPage: View {
     @State private var isImporting = false
     @State private var importError: String?
     @State private var recentThumbnail: UIImage?
+    @State private var selectedFilter = "Original"
+    private let cameraFilters: [(String, Color)] = [
+        ("Original", .clear), ("Vivid", .pink.opacity(0.20)), ("Warm", .orange.opacity(0.22)),
+        ("Cool", .cyan.opacity(0.20)), ("Mono", .white.opacity(0.22)), ("Dream", .purple.opacity(0.20))
+    ]
     @StateObject private var recorder = LoopCameraRecorder()
 
     var body: some View {
@@ -2550,6 +2595,9 @@ struct CreateVideoPage: View {
                     CameraCapturePreview(session: recorder.session)
                         .clipShape(Rectangle())
                         .padding(.horizontal, 10)
+                    cameraFilters.first(where: { $0.0 == selectedFilter })?.1
+                        .allowsHitTesting(false)
+                        .padding(.horizontal, 10)
                     LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .center, endPoint: .bottom)
                         .frame(height: 130).clipShape(Rectangle())
                         .padding(.horizontal, 10).allowsHitTesting(false)
@@ -2567,6 +2615,23 @@ struct CreateVideoPage: View {
                         }
                     }.padding(.bottom, 16)
                 }.frame(maxHeight: .infinity)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(cameraFilters, id: \.0) { filter in
+                            Button { selectedFilter = filter.0 } label: {
+                                VStack(spacing: 5) {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(LinearGradient(colors: [filter.1 == .clear ? Color.gray.opacity(0.35) : filter.1, .black], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        .frame(width: 48, height: 42)
+                                        .overlay(Image(systemName: filter.0 == "Original" ? "camera" : filter.0 == "Mono" ? "circle.lefthalf.filled" : "camera.filters").font(.system(size: 17)).foregroundStyle(.white))
+                                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(selectedFilter == filter.0 ? Color.cyan : Color.white.opacity(0.12), lineWidth: selectedFilter == filter.0 ? 2 : 1))
+                                    Text(filter.0).font(.system(size: 11, weight: selectedFilter == filter.0 ? .bold : .medium)).foregroundStyle(selectedFilter == filter.0 ? .cyan : .white)
+                                }
+                            }.buttonStyle(.plain)
+                        }
+                    }.padding(.horizontal, 14).padding(.vertical, 8)
+                }
 
                 HStack {
                     PhotosPicker(selection: $selectedPhoto, matching: .any(of: [.videos, .images]), photoLibrary: .shared()) {
@@ -2635,8 +2700,8 @@ struct CreateVideoPage: View {
         }
         .fullScreenCover(isPresented: $showEditor) {
             if let url = recordedURL {
-                VideoEditorView(url: url) { text, editedURL in
-                    onPost(text, editedURL)
+                VideoEditorView(url: url) { payload, editedURL in
+                    onPost(payload, editedURL)
                 }
             }
         }
@@ -2819,8 +2884,10 @@ struct VideoEditorView: View {
     let onPost: (String, URL) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
+    @State private var title = ""
     @State private var caption = ""
-    @State private var showPostDetails = false
+    @State private var editorStep = 0
+    @State private var selectedFilter = "Original"
     @State private var previewPlayer = AVPlayer()
     @State private var textColor = Color.white
     @State private var opacity = 1.0
@@ -2957,90 +3024,60 @@ struct VideoEditorView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if !showPostDetails {
+                if editorStep == 0 {
                     VStack(spacing: 14) {
-                        previewView
-                            .frame(maxWidth: .infinity)
-                            .aspectRatio(9.0 / 16.0, contentMode: .fit)
-                            .padding(.horizontal, 24)
-                        Text("Preview your video")
-                            .font(.headline)
-                        Text("Your video plays in a loop. Add text on the next screen.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        previewView.frame(maxWidth: .infinity).aspectRatio(9.0 / 16.0, contentMode: .fit).padding(.horizontal, 24)
+                        Text("Preview your video").font(.headline)
+                        Text("Tap Next to add text directly on the video.").font(.caption).foregroundStyle(.secondary)
                         Spacer(minLength: 0)
-                    }
-                    .padding(.top, 12)
+                    }.padding(.top, 12)
+                } else if editorStep == 1 {
+                    VStack(spacing: 14) {
+                        previewView.frame(maxWidth: .infinity).aspectRatio(9.0 / 16.0, contentMode: .fit).padding(.horizontal, 24)
+                        HStack(spacing: 10) {
+                            TextField("Add text on video…", text: $text, axis: .vertical).textFieldStyle(.roundedBorder)
+                            Button { showTextTools = true } label: { Image(systemName: "textformat").font(.headline) }.buttonStyle(.bordered)
+                        }.padding(.horizontal, 18)
+                        Text("This text is burned into the video itself. Drag it on the preview to position it.")
+                            .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 24)
+                        Spacer(minLength: 0)
+                    }.padding(.top, 12)
                 } else {
-                    VStack(spacing: 16) {
-                        HStack(alignment: .top, spacing: 12) {
-                            previewView
-                                .frame(width: 116, height: 206)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Text on video")
-                                    .font(.subheadline.weight(.semibold))
-                                TextField("Add text overlay…", text: $text, axis: .vertical)
-                                    .textFieldStyle(.roundedBorder)
-                                Button { showTextTools = true } label: {
-                                    Label("Text style", systemImage: "textformat")
-                                        .font(.subheadline.weight(.semibold))
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack(alignment: .top, spacing: 12) {
+                                previewView.frame(width: 104, height: 185).clipShape(RoundedRectangle(cornerRadius: 10))
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("Title").font(.subheadline.weight(.semibold))
+                                    TextField("Add a video title…", text: $title, axis: .vertical).textFieldStyle(.roundedBorder)
+                                    Text("Caption / description").font(.subheadline.weight(.semibold))
+                                    TextField("Write a description…", text: $caption, axis: .vertical)
+                                        .lineLimit(3...5).textFieldStyle(.roundedBorder)
+                                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                                        .onChange(of: caption) { _ in updateHashtagSuggestions() }
                                 }
-                                .buttonStyle(.bordered)
-                                Text("Drag text on the preview to position it.")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
                             }
-                        }
-                        .padding(.horizontal, 14)
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Caption")
-                                .font(.subheadline.weight(.semibold))
-                            TextField("Write a caption…", text: $caption, axis: .vertical)
-                                .lineLimit(3...5)
-                                .textFieldStyle(.roundedBorder)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .onChange(of: caption) { _ in updateHashtagSuggestions() }
                             hashtagSuggestionsView
-                        }
-                        .padding(.horizontal, 14)
-                        Spacer(minLength: 0)
-                        HStack(spacing: 12) {
-                            Button("Cancel", role: .cancel) { dismiss() }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
                             Button(action: postVideo) {
-                                Text("Post").fontWeight(.bold)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 12)
-                                    .background(Color.cyan, in: RoundedRectangle(cornerRadius: 10))
-                                    .foregroundStyle(.black)
+                                Text("Post video").fontWeight(.bold).frame(maxWidth: .infinity).padding(.vertical, 13)
+                                    .background(Color.cyan, in: RoundedRectangle(cornerRadius: 10)).foregroundStyle(.black)
                             }
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, 10)
+                        }.padding(14)
                     }
-                    .padding(.top, 16)
                 }
             }
             .background(Color.black)
-            .navigationTitle(showPostDetails ? "Post video" : "Preview video")
+            .navigationTitle(editorStep == 2 ? "Title & caption" : editorStep == 1 ? "Text on video" : "Preview video")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(showPostDetails ? "Back" : "Cancel") {
-                        if showPostDetails { showPostDetails = false } else { dismiss() }
+                    Button(editorStep > 0 ? "Back" : "Cancel") {
+                        if editorStep > 0 { editorStep -= 1 } else { dismiss() }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if !showPostDetails {
-                        Button("Next") { showPostDetails = true }
-                            .fontWeight(.bold)
-                    } else {
-                        Button { showTextTools = true } label: { Image(systemName: "textformat") }
-                            .accessibilityLabel("Edit text style")
+                    if editorStep < 2 {
+                        Button("Next") { editorStep += 1 }.fontWeight(.bold)
                     }
                 }
             }
@@ -3062,15 +3099,17 @@ struct VideoEditorView: View {
     }
 
     private func postVideo() {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         let overlay = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let payload = "\u{001E}LERIZ_TITLE:" + cleanTitle + "\n" + cleanCaption
         Task {
             await ensureHashtagsExist(in: cleanCaption)
             if overlay.isEmpty {
-                await MainActor.run { onPost(cleanCaption, url) }
+                await MainActor.run { onPost(payload, url) }
             } else {
                 let rendered = await renderTextIntoVideo(text: overlay, sourceURL: url, color: UIColor(textColor), opacity: opacity, border: useBorder, gradient: useGradient)
-                await MainActor.run { onPost(cleanCaption, rendered ?? url) }
+                await MainActor.run { onPost(payload, rendered ?? url) }
             }
         }
     }
