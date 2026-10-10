@@ -7,6 +7,7 @@ import SceneKit
 import ReplayKit
 import AVFoundation
 import CoreMedia
+import PhotosUI
 
 struct LerizServerConfiguration: Decodable {
     let serverName: String
@@ -23,6 +24,69 @@ struct LerizServerConfiguration: Decodable {
         }
         return config
     }()
+}
+
+
+struct LerizAPI {
+    static let baseURL = LerizServerConfiguration.current.baseURL
+    static var token: String { UserDefaults.standard.string(forKey: "lerizAuthToken") ?? "" }
+
+    static func request(_ path: String, method: String = "GET", body: Data? = nil, contentType: String = "application/json") async throws -> (Data, HTTPURLResponse) {
+        guard let base = URL(string: baseURL), let url = URL(string: path, relativeTo: base) else {
+            throw NSError(domain: "LerizAPI", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid Leriz server URL."])
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = method
+        req.setValue("true", forHTTPHeaderField: "ngrok-skip-browser-warning")
+        req.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        if !token.isEmpty { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        req.httpBody = body
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw NSError(domain: "LerizAPI", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid response from Leriz server."])
+        }
+        guard (200...299).contains(http.statusCode) else {
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            throw NSError(domain: "LerizAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: json["error"] as? String ?? "Leriz request failed (HTTP \(http.statusCode))."])
+        }
+        return (data, http)
+    }
+
+    static func fetchFeed(mode: String = "forYou") async throws -> [FeedClip] {
+        let (data, _) = try await request("api/feed?mode=\(mode.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? mode)&limit=100&offset=0")
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        let rows = json["videos"] as? [[String: Any]] ?? []
+        return rows.compactMap { row in
+            guard let id = row["id"] as? String, !id.isEmpty else { return nil }
+            let user = row["user"] as? [String: Any] ?? [:]
+            let username = user["username"] as? String ?? user["handle"] as? String ?? "user"
+            let display = user["displayName"] as? String ?? user["display_name"] as? String ?? username
+            let url = row["videoURL"] as? String ?? row["videoUrl"] as? String ?? row["url"] as? String ?? "\(baseURL)/api/videos/\(id)/file"
+            let caption = row["caption"] as? String ?? ""
+            let likes = row["likes"] as? Int ?? 0
+            let comments = row["comments"] as? Int ?? 0
+            return FeedClip(id: abs(id.hashValue % 2_000_000_000), creator: display, handle: "@\(username)", caption: caption, tags: "", song: "original audio · \(username)", likes: String(likes), comments: String(comments), views: row["views"] as? Int ?? 0, accent: .purple, videoURL: url, symbol: "person")
+        }
+    }
+
+    static func uploadVideo(fileURL: URL, caption: String) async throws {
+        let video = try Data(contentsOf: fileURL)
+        let boundary = "LerizBoundary-\(UUID().uuidString)"
+        var body = Data()
+        func append(_ value: String) { body.append(Data(value.utf8)) }
+        append("--\(boundary)\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n\(caption)\r\n")
+        append("--\(boundary)\r\nContent-Disposition: form-data; name=\"video\"; filename=\"leriz-upload.mp4\"\r\nContent-Type: video/mp4\r\n\r\n")
+        body.append(video)
+        append("\r\n--\(boundary)--\r\n")
+        _ = try await request("api/videos", method: "POST", body: body, contentType: "multipart/form-data; boundary=\(boundary)")
+    }
+
+    static func toggleLike(videoID: String) async throws { _ = try await request("api/videos/\(videoID)/like", method: "POST", body: Data("{}".utf8)) }
+    static func toggleSave(videoID: String) async throws { _ = try await request("api/videos/\(videoID)/save", method: "POST", body: Data("{}".utf8)) }
+    static func follow(username: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["username": username])
+        _ = try await request("api/users/\(username)/follow", method: "POST", body: body)
+    }
 }
 
 @main
@@ -49,12 +113,8 @@ struct FeedClip: Identifiable {
     let videoURL: String
     let symbol: String
 
-    static let samples: [FeedClip] = [
-        .init(id: 1, creator: "Milo Makes", handle: "@milomakes", caption: "POV: you found the quietest place on Earth 🌊", tags: "#ocean #escape #leriz", song: "original audio · milomakes", likes: "248.6K", comments: "3,842", views: 2_400_000, accent: Color(red: 0.08, green: 0.72, blue: 0.79), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4", symbol: "water.waves"),
-        .init(id: 2, creator: "Pixel Planet", handle: "@pixelplanet", caption: "The internet is a very strange place. Stay curious.", tags: "#weird #internet #facts", song: "NEON DREAMS · pixelplanet", likes: "91.2K", comments: "1,204", views: 890_000, accent: Color(red: 0.57, green: 0.27, blue: 0.96), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", symbol: "sparkles"),
-        .init(id: 3, creator: "Weekend Frames", handle: "@weekendframes", caption: "A tiny reminder to go outside today ☀️", tags: "#weekend #travel #vibes", song: "soft focus · weekendframes", likes: "512K", comments: "8,091", views: 4_700_000, accent: Color(red: 1.0, green: 0.42, blue: 0.29), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", symbol: "sun.max"),
-        .init(id: 4, creator: "The Daily Loop", handle: "@thedailyloop", caption: "This is your sign to try something new.", tags: "#motivation #tryit #fyp", song: "little by little · thedailyloop", likes: "76.4K", comments: "976", views: 630_000, accent: Color(red: 0.20, green: 0.79, blue: 0.53), videoURL: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4", symbol: "bolt")
-    ]
+    // The feed starts empty and is populated only by videos returned by the Leriz backend.
+    static let samples: [FeedClip] = []
 }
 
 
@@ -282,7 +342,11 @@ struct LerizLaunchView: View {
 }
 
 struct LoopFeedView: View {
-    @State private var clips = FeedClip.samples
+    @State private var clips: [FeedClip] = []
+    @State private var feedLoading = true
+    @State private var feedError = ""
+    @AppStorage("lerizUsername") private var currentUsername = ""
+    @AppStorage("lerizAuthToken") private var authToken = ""
     @State private var selectedClip = 0
     @State private var showCreate = false
     @State private var likedIDs: Set<Int> = []
@@ -300,6 +364,16 @@ struct LoopFeedView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            if feedLoading {
+                VStack(spacing: 12) { ProgressView().tint(.white); Text("Loading videos…").font(.subheadline).foregroundStyle(.secondary) }
+            } else if clips.isEmpty {
+                VStack(spacing: 14) {
+                    Image(systemName: "video.slash").font(.system(size: 48, weight: .light)).foregroundStyle(.white.opacity(0.6))
+                    Text("No videos available").font(.title3.bold()).foregroundStyle(.white)
+                    Text(feedError.isEmpty ? "Be the first to upload a video." : feedError).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 34)
+                    Button { showCreate = true } label: { Label("Upload a video", systemImage: "plus").font(.system(size: 15, weight: .bold)).padding(.horizontal, 20).padding(.vertical, 12).background(.white.opacity(0.12), in: Capsule()) }
+                }
+            } else {
             GeometryReader { geometry in
                 TabView(selection: $selectedClip) {
                     ForEach(Array(clips.enumerated()), id: \.element.id) { index, clip in
@@ -329,8 +403,11 @@ struct LoopFeedView: View {
                 .overlay(alignment: .bottom) { bottomBar }
             }
             .ignoresSafeArea()
+            }
         }
-        .sheet(isPresented: $showComments) { CommentsSheet(clip: clips[selectedClip]) }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        .task { await loadFeed() }
+        .onChange(of: selectedTab) { value in Task { await loadFeed(mode: value == "Following" ? "following" : "forYou") } }
+        .sheet(isPresented: $showComments) { if !clips.isEmpty { CommentsSheet(clip: clips[selectedClip]) } }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         .sheet(isPresented: $showSearch) {
             SearchSheet(clips: clips) { chosenClip in
                 if let index = clips.firstIndex(where: { $0.id == chosenClip.id }) {
@@ -344,12 +421,22 @@ struct LoopFeedView: View {
         .fullScreenCover(isPresented: $showProfile) {
             ProfileSheet()
         }
-        .fullScreenCover(isPresented: $showCreate) { CreateVideoPage { caption, recordedURL in
-            let clip = FeedClip(id: (clips.map(\.id).max() ?? 0) + 1, creator: "Your Leriz", handle: "@yourleriz", caption: caption.isEmpty ? "My new Leriz ✨" : caption, tags: "#leriz #newpost", song: "original audio · yourloop", likes: "0", comments: "0", views: 0, accent: .purple, videoURL: recordedURL.absoluteString, symbol: "person")
-            clips.insert(clip, at: 0)
-            selectedClip = 0
-            showCreate = false
-        } }
+        .fullScreenCover(isPresented: $showCreate) {
+            CreateVideoPage { caption, mediaURL in
+                Task {
+                    do {
+                        try await LerizAPI.uploadVideo(fileURL: mediaURL, caption: caption)
+                        await loadFeed()
+                        await MainActor.run {
+                            selectedClip = 0
+                            showCreate = false
+                        }
+                    } catch {
+                        await MainActor.run { feedError = "Upload failed: \(error.localizedDescription)" }
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $showInbox) { InboxSheet() }
         .sheet(isPresented: $showShare) { ShareSheet(clip: clips[selectedClip]) }
         .sheet(item: $selectedSongClip) { songClip in
@@ -357,6 +444,20 @@ struct LoopFeedView: View {
                 if let index = clips.firstIndex(where: { $0.id == chosenClip.id }) { selectedClip = index }
             }
         }
+    }
+
+    @MainActor
+    private func loadFeed(mode: String = "forYou") async {
+        feedLoading = true
+        do {
+            clips = try await LerizAPI.fetchFeed(mode: mode)
+            selectedClip = min(selectedClip, max(0, clips.count - 1))
+            feedError = ""
+        } catch {
+            clips = []
+            feedError = "Could not load videos. Check your connection and try again."
+        }
+        feedLoading = false
     }
 
     private var topBar: some View {
@@ -444,6 +545,23 @@ struct LoopFeedView: View {
 
     private func toggle(_ id: Int, in set: inout Set<Int>) {
         if set.contains(id) { set.remove(id) } else { set.insert(id) }
+        guard clips.indices.contains(selectedClip), let videoID = serverID(for: id) else { return }
+        Task {
+            do {
+                if set.contains(id) {
+                    if set == likedIDs { try await LerizAPI.toggleLike(videoID: videoID) }
+                    else { try await LerizAPI.toggleSave(videoID: videoID) }
+                }
+            } catch { await MainActor.run { feedError = error.localizedDescription } }
+        }
+    }
+
+    private func serverID(for id: Int) -> String? {
+        guard let clip = clips.first(where: { $0.id == id }),
+              let url = URL(string: clip.videoURL) else { return nil }
+        let parts = url.pathComponents
+        guard let apiIndex = parts.firstIndex(of: "videos"), parts.indices.contains(apiIndex + 1) else { return nil }
+        return parts[apiIndex + 1]
     }
 }
 
