@@ -331,6 +331,7 @@ r'''    @State private var previewPlayer = AVPlayer()
     @State private var previewIsPlaying = true
     @State private var panelHeight: CGFloat = 0
     @State private var panelHeightAtDragStart: CGFloat? = nil
+    @State private var panelDragOffset: CGFloat = 0
     @FocusState private var commentFieldFocused: Bool''',
 "resizable comments panel state"
 )
@@ -345,8 +346,12 @@ comments_body = r'''    var body: some View {
                 ZStack {
                     Color.black
                     PlayerSurface(player: previewPlayer)
-                        .frame(width: geometry.size.width, height: max(1, totalHeight - clampedPanelHeight))
-                        .clipped()
+                        .frame(
+                            width: min(geometry.size.width - 28, max(1, totalHeight - clampedPanelHeight) * 9.0 / 16.0),
+                            height: max(1, totalHeight - clampedPanelHeight)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.10), lineWidth: 1))
                         .contentShape(Rectangle())
                         .onTapGesture {
                             if previewPlayer.timeControlStatus == .playing {
@@ -397,9 +402,24 @@ comments_body = r'''    var body: some View {
                             DragGesture(minimumDistance: 2)
                                 .onChanged { value in
                                     if panelHeightAtDragStart == nil { panelHeightAtDragStart = panelHeight }
-                                    panelHeight = min(max((panelHeightAtDragStart ?? panelHeight) - value.translation.height, totalHeight * 0.38), totalHeight * 0.82)
+                                    if value.translation.height > 0 {
+                                        panelDragOffset = value.translation.height
+                                    } else {
+                                        panelDragOffset = 0
+                                        panelHeight = min(max((panelHeightAtDragStart ?? panelHeight) - value.translation.height, totalHeight * 0.38), totalHeight * 0.82)
+                                    }
                                 }
-                                .onEnded { _ in panelHeightAtDragStart = nil }
+                                .onEnded { value in
+                                    panelHeightAtDragStart = nil
+                                    if value.translation.height >= totalHeight * 0.20 {
+                                        dismiss()
+                                    } else {
+                                        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.86)) {
+                                            panelDragOffset = 0
+                                            panelHeight = min(max(panelHeight, totalHeight * 0.5), totalHeight * 0.82)
+                                        }
+                                    }
+                                }
                         )
                     HStack {
                         Text("Comments")
@@ -541,6 +561,7 @@ comments_body = r'''    var body: some View {
                 .background(Color(uiColor: .systemBackground))
             }
             .frame(width: geometry.size.width, height: totalHeight, alignment: .top)
+            .offset(y: panelDragOffset)
             .background(Color.black)
             .ignoresSafeArea(.container, edges: .all)
             .onAppear {
