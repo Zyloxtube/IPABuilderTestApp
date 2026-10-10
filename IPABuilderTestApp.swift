@@ -8,6 +8,8 @@ import ReplayKit
 import AVFoundation
 import CoreMedia
 import PhotosUI
+import Photos
+import UniformTypeIdentifiers
 
 struct LerizServerConfiguration: Decodable {
     let serverName: String
@@ -143,6 +145,9 @@ struct LerizLaunchView: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
+        .onChange(of: authToken) { value in
+            if value.isEmpty { enterApp = false; showWelcome = false; isSignUp = false; password = "" }
+        }
         .preferredColorScheme(.dark)
     }
 
@@ -326,6 +331,14 @@ struct LerizLaunchView: View {
             }
 
             authToken = token
+            if isSignUp {
+                UserDefaults.standard.set(username.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "lerizUsername")
+            } else {
+                let user = json["user"] as? [String: Any] ?? [:]
+                let serverUsername = user["username"] as? String ?? user["handle"] as? String ?? ""
+                if !serverUsername.isEmpty { UserDefaults.standard.set(serverUsername, forKey: "lerizUsername") }
+                else if let emailName = email.split(separator: "@").first { UserDefaults.standard.set(String(emailName), forKey: "lerizUsername") }
+            }
             withAnimation(.easeInOut(duration: 0.65)) {
                 isLoading = false
                 showWelcome = true
@@ -382,8 +395,8 @@ struct LoopFeedView: View {
                             isActive: selectedClip == index,
                             isLiked: likedIDs.contains(clip.id),
                             isSaved: savedIDs.contains(clip.id),
-                            onLike: { toggle(clip.id, in: &likedIDs) },
-                            onSave: { toggle(clip.id, in: &savedIDs) },
+                            onLike: { toggleLike(clip.id) },
+                            onSave: { toggleSave(clip.id) },
                             onComments: { showComments = true },
                             onShare: { showShare = true },
                             onProfile: { selectedProfileClip = clip },
@@ -543,17 +556,16 @@ struct LoopFeedView: View {
         }
     }
 
-    private func toggle(_ id: Int, in set: inout Set<Int>) {
-        if set.contains(id) { set.remove(id) } else { set.insert(id) }
-        guard clips.indices.contains(selectedClip), let videoID = serverID(for: id) else { return }
-        Task {
-            do {
-                if set.contains(id) {
-                    if set == likedIDs { try await LerizAPI.toggleLike(videoID: videoID) }
-                    else { try await LerizAPI.toggleSave(videoID: videoID) }
-                }
-            } catch { await MainActor.run { feedError = error.localizedDescription } }
-        }
+    private func toggleLike(_ id: Int) {
+        if likedIDs.contains(id) { likedIDs.remove(id) } else { likedIDs.insert(id) }
+        guard let videoID = serverID(for: id) else { return }
+        Task { do { try await LerizAPI.toggleLike(videoID: videoID) } catch { await MainActor.run { feedError = error.localizedDescription } } }
+    }
+
+    private func toggleSave(_ id: Int) {
+        if savedIDs.contains(id) { savedIDs.remove(id) } else { savedIDs.insert(id) }
+        guard let videoID = serverID(for: id) else { return }
+        Task { do { try await LerizAPI.toggleSave(videoID: videoID) } catch { await MainActor.run { feedError = error.localizedDescription } } }
     }
 
     private func serverID(for id: Int) -> String? {
@@ -1301,6 +1313,9 @@ struct CreateVideoPage: View {
     @State private var permissionMessage: String?
     @State private var permissionsGranted = false
     @State private var isBackCamera = false
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var isImporting = false
+    @State private var importError: String?
     @StateObject private var recorder = LoopCameraRecorder()
 
     var body: some View {
@@ -1338,15 +1353,14 @@ struct CreateVideoPage: View {
                 }.frame(maxHeight: .infinity)
 
                 HStack {
-                    Button {
-                        isBackCamera.toggle()
-                        recorder.switchCamera(to: isBackCamera ? .back : .front) { error in
-                            if let error { permissionMessage = error }
+                    PhotosPicker(selection: $selectedPhoto, matching: .any(of: [.videos, .images]), photoLibrary: .shared()) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.12)).frame(width: 54, height: 58)
+                            Image(systemName: "photo.on.rectangle").font(.system(size: 23)).foregroundStyle(.white)
+                            if isImporting { ProgressView().tint(.white).scaleEffect(0.7) }
                         }
-                    } label: {
-                        Image(systemName: "arrow.triangle.2.circlepath.camera").font(.system(size: 23))
-                            .foregroundStyle(.white).frame(width: 54, height: 58)
                     }
+                    .disabled(isImporting || isRecording)
                     Spacer()
                     Button {
                         if isRecording {
@@ -1392,12 +1406,44 @@ struct CreateVideoPage: View {
         .onChange(of: recorder.failureMessage) { value in
             if let value { permissionMessage = value; isRecording = false }
         }
+        .onChange(of: selectedPhoto) { item in
+            guard let item else { return }
+            Task { await importSelectedMedia(item) }
+        }
         .fullScreenCover(isPresented: $showEditor) {
             if let url = recordedURL {
                 VideoEditorView(url: url) { text, editedURL in
                     onPost(text, editedURL)
                 }
             }
+        }
+    }
+
+    @MainActor
+    private func importSelectedMedia(_ item: PhotosPickerItem) async {
+        isImporting = true
+        defer { isImporting = false; selectedPhoto = nil }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                permissionMessage = "Could not read that media item. Try another one."
+                return
+            }
+            if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
+                let ext = item.supportedContentTypes.first(where: { $0.conforms(to: .movie) })?.preferredFilenameExtension ?? "mp4"
+                let target = FileManager.default.temporaryDirectory.appendingPathComponent("Leriz-import-\(UUID().uuidString).\(ext)")
+                try data.write(to: target, options: .atomic)
+                recordedURL = target
+                showEditor = true
+                permissionMessage = nil
+            } else if let image = UIImage(data: data), let stillVideo = await StillImageVideoExporter.export(image: image) {
+                recordedURL = stillVideo
+                showEditor = true
+                permissionMessage = nil
+            } else {
+                permissionMessage = "This image could not be prepared for upload."
+            }
+        } catch {
+            permissionMessage = "Could not import media: \(error.localizedDescription)"
         }
     }
 
@@ -1409,6 +1455,50 @@ struct CreateVideoPage: View {
         guard micOK else { permissionMessage = "Microphone permission is required to record sound."; return }
         recorder.configure(position: .front) { error in
             if let error { permissionMessage = error } else { permissionsGranted = true }
+        }
+    }
+}
+
+final class StillImageVideoExporter {
+    static func export(image: UIImage) async -> URL? {
+        let size = CGSize(width: 720, height: 1280)
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent("Leriz-photo-\(UUID().uuidString).mp4")
+        try? FileManager.default.removeItem(at: output)
+        guard let writer = try? AVAssetWriter(outputURL: output, fileType: .mp4) else { return nil }
+        let settings: [String: Any] = [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: Int(size.width), AVVideoHeightKey: Int(size.height)]
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
+        input.expectsMediaDataInRealTime = false
+        let attrs: [String: Any] = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB, kCVPixelBufferWidthKey as String: Int(size.width), kCVPixelBufferHeightKey as String: Int(size.height), kCVPixelBufferCGImageCompatibilityKey as String: true, kCVPixelBufferCGBitmapContextCompatibilityKey as String: true]
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: attrs)
+        guard writer.canAdd(input) else { return nil }
+        writer.add(input)
+        guard writer.startWriting() else { return nil }
+        writer.startSession(atSourceTime: .zero)
+        guard let cgImage = image.cgImage else { writer.cancelWriting(); return nil }
+        let queue = DispatchQueue(label: "leriz.photo-to-video")
+        return await withCheckedContinuation { continuation in
+            input.requestMediaDataWhenReady(on: queue) {
+                for frame in 0..<150 {
+                    if !input.isReadyForMoreMediaData { break }
+                    var buffer: CVPixelBuffer?
+                    guard let pool = adaptor.pixelBufferPool,
+                          CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &buffer) == kCVReturnSuccess,
+                          let pixelBuffer = buffer else { writer.cancelWriting(); continuation.resume(returning: nil); return }
+                    CVPixelBufferLockBaseAddress(pixelBuffer, [])
+                    if let context = CGContext(data: CVPixelBufferGetBaseAddress(pixelBuffer), width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer), space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue) {
+                        context.setFillColor(UIColor.black.cgColor)
+                        context.fill(CGRect(origin: .zero, size: size))
+                        let source = CGSize(width: cgImage.width, height: cgImage.height)
+                        let scale = max(size.width / source.width, size.height / source.height)
+                        let drawSize = CGSize(width: source.width * scale, height: source.height * scale)
+                        context.draw(cgImage, in: CGRect(x: (size.width - drawSize.width) / 2, y: (size.height - drawSize.height) / 2, width: drawSize.width, height: drawSize.height))
+                    }
+                    CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+                    if !adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: Int64(frame), timescale: 30)) { writer.cancelWriting(); continuation.resume(returning: nil); return }
+                }
+                input.markAsFinished()
+                writer.finishWriting { continuation.resume(returning: writer.status == .completed ? output : nil) }
+            }
         }
     }
 }
@@ -1457,7 +1547,19 @@ struct VideoEditorView: View {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { showTextTools = true } label: { Image(systemName: "textformat") }
                         .accessibilityLabel("Edit text style")
-                    Button("Post") { onPost(text, url) }.fontWeight(.bold)
+                    Button("Post") {
+                        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            onPost("", url)
+                        } else {
+                            Task {
+                                if let rendered = await renderTextIntoVideo(text: text, sourceURL: url, color: UIColor(textColor), opacity: opacity, border: useBorder, gradient: useGradient) {
+                                    await MainActor.run { onPost(text, rendered) }
+                                } else {
+                                    await MainActor.run { onPost(text, url) }
+                                }
+                            }
+                        }
+                    }.fontWeight(.bold)
                 }
             }
             .sheet(isPresented: $showTextTools) {
@@ -1484,6 +1586,57 @@ struct VideoEditorView: View {
                 }.presentationDetents([.medium, .large]).preferredColorScheme(.dark)
             }
         }.preferredColorScheme(.dark)
+    }
+
+    private func renderTextIntoVideo(text: String, sourceURL: URL, color: UIColor, opacity: Double, border: Bool, gradient: Bool) async -> URL? {
+        let asset = AVURLAsset(url: sourceURL)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let naturalSize = try? await track.load(.naturalSize),
+              let duration = try? await asset.load(.duration) else { return nil }
+        let composition = AVMutableComposition()
+        guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
+              let range = try? await track.load(.timeRange) else { return nil }
+        do { try videoTrack.insertTimeRange(range, of: track, at: .zero) } catch { return nil }
+        if let audio = try? await asset.loadTracks(withMediaType: .audio).first,
+           let audioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+            try? audioTrack.insertTimeRange(CMTimeRange(start: .zero, duration: duration), of: audio, at: .zero)
+        }
+        let videoSize = naturalSize.applying((try? await track.load(.preferredTransform)) ?? .identity)
+        let width = abs(videoSize.width), height = abs(videoSize.height)
+        let parent = CALayer()
+        let videoLayer = CALayer()
+        parent.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        videoLayer.frame = parent.frame
+        parent.addSublayer(videoLayer)
+        let textLayer = CATextLayer()
+        textLayer.string = text
+        textLayer.alignmentMode = .center
+        textLayer.isWrapped = true
+        textLayer.contentsScale = UIScreen.main.scale
+        textLayer.font = UIFont.systemFont(ofSize: max(26, width * 0.055), weight: .black)
+        textLayer.fontSize = max(26, width * 0.055)
+        textLayer.foregroundColor = (gradient ? UIColor.white : color).withAlphaComponent(opacity).cgColor
+        textLayer.backgroundColor = border ? UIColor.black.withAlphaComponent(0.55).cgColor : UIColor.clear.cgColor
+        textLayer.cornerRadius = 8
+        textLayer.frame = CGRect(x: width * 0.06, y: height * 0.42 + textOffset.height, width: width * 0.88, height: min(height * 0.24, max(80, CGFloat(text.count / 24 + 1) * 52)))
+        parent.addSublayer(textLayer)
+        let instruction = AVMutableVideoComposition()
+        instruction.renderSize = CGSize(width: width, height: height)
+        instruction.frameDuration = CMTime(value: 1, timescale: 30)
+        let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
+        layerInstruction.setTransform((try? await track.load(.preferredTransform)) ?? .identity, at: .zero)
+        let videoInstruction = AVMutableVideoCompositionInstruction()
+        videoInstruction.timeRange = CMTimeRange(start: .zero, duration: duration)
+        videoInstruction.layerInstructions = [layerInstruction]
+        instruction.instructions = [videoInstruction]
+        instruction.animationTool = AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent("Leriz-edited-\(UUID().uuidString).mp4")
+        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else { return nil }
+        exporter.outputURL = output
+        exporter.outputFileType = .mp4
+        exporter.videoComposition = instruction
+        await exporter.export()
+        return exporter.status == .completed ? output : nil
     }
 
     private func colorButton(_ color: Color) -> some View {
