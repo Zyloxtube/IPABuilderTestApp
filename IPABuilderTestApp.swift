@@ -1057,6 +1057,7 @@ struct CommentsSheet: View {
     @State private var dragTranslation: CGFloat = 0
     @State private var selectedCommentProfile: FeedClip? = nil
     @State private var commentAvatarURLs: [String] = []
+    @State private var currentAvatarURL = ""
 
     var body: some View {
         NavigationStack {
@@ -1094,7 +1095,7 @@ struct CommentsSheet: View {
                             }
                         }
                     })
-                .onAppear { Task { await loadComments() } }
+                .onAppear { Task { await loadComments(); await loadMyAvatar() } }
 
                 Divider().overlay(Color.white.opacity(0.08))
 
@@ -1234,7 +1235,7 @@ struct CommentsSheet: View {
                             if let data = Data(base64Encoded: profileImageData), let image = UIImage(data: data) {
                                 Image(uiImage: image).resizable().scaledToFill()
                             } else {
-                                LerizAvatarView(urlString: "", size: 46, fallbackColor: .purple)
+                                LerizAvatarView(urlString: currentAvatarURL, size: 46, fallbackColor: .purple)
                             }
                         }
                         .frame(width: 46, height: 46).clipShape(Circle())
@@ -1300,6 +1301,17 @@ struct CommentsSheet: View {
             let saved = (try? JSONDecoder().decode([String].self, from: Data(likedCommentIDsJSON.utf8))) ?? []
             likedComments = Set(saved)
         }
+    }
+
+    private func loadMyAvatar() async {
+        do {
+            let (data, _) = try await LerizAPI.request("api/me")
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            let user = json["user"] as? [String: Any] ?? json
+            await MainActor.run {
+                currentAvatarURL = user["avatarURL"] as? String ?? user["avatar_url"] as? String ?? ""
+            }
+        } catch { }
     }
 
     private func toggleCommentLike(commentID: String) async {
@@ -1951,7 +1963,7 @@ struct ProfileSheet: View {
                 AccountsListSheet(username: (profileUser["username"] as? String) ?? (clip?.handle.replacingOccurrences(of: "@", with: "") ?? currentUsername), kind: "following") { selectedAccountProfile = $0 }
             }
             .fullScreenCover(item: $selectedAccountProfile) { person in ProfileSheet(clip: person) }
-            .sheet(item: $selectedProfileVideo) { video in ProfileVideoPlayerSheet(clip: video) }
+            .fullScreenCover(item: $selectedProfileVideo) { video in ProfileVideoPlayerSheet(clip: video) }
             .task { await loadProfile() }
             .alert("Account action failed", isPresented: Binding(get: { !showDeleteError.isEmpty }, set: { if !$0 { showDeleteError = "" } })) {
                 Button("OK", role: .cancel) { showDeleteError = "" }
