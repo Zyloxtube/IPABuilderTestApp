@@ -63,7 +63,8 @@ struct LerizAPI {
             let user = row["user"] as? [String: Any] ?? [:]
             let username = user["username"] as? String ?? user["handle"] as? String ?? "user"
             let display = user["displayName"] as? String ?? user["display_name"] as? String ?? username
-            let url = row["videoURL"] as? String ?? row["videoUrl"] as? String ?? row["url"] as? String ?? "\(baseURL)/api/videos/\(id)/file"
+            let rawURL = row["videoURL"] as? String ?? row["videoUrl"] as? String ?? row["url"] as? String ?? "/api/videos/\(id)/file"
+            let url = URL(string: rawURL)?.scheme == nil ? baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + (rawURL.hasPrefix("/") ? rawURL : "/\(rawURL)") : rawURL
             let caption = row["caption"] as? String ?? ""
             let likes = row["likes"] as? Int ?? 0
             let comments = row["comments"] as? Int ?? 0
@@ -1670,9 +1671,11 @@ final class StillImageVideoExporter {
         guard let cgImage = image.cgImage else { writer.cancelWriting(); return nil }
         let queue = DispatchQueue(label: "leriz.photo-to-video")
         return await withCheckedContinuation { continuation in
+            var frame = 0
+            var didFinish = false
             input.requestMediaDataWhenReady(on: queue) {
-                for frame in 0..<150 {
-                    if !input.isReadyForMoreMediaData { break }
+                guard !didFinish else { return }
+                while frame < 150 && input.isReadyForMoreMediaData {
                     var buffer: CVPixelBuffer?
                     guard let pool = adaptor.pixelBufferPool,
                           CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &buffer) == kCVReturnSuccess,
@@ -1687,10 +1690,19 @@ final class StillImageVideoExporter {
                         context.draw(cgImage, in: CGRect(x: (size.width - drawSize.width) / 2, y: (size.height - drawSize.height) / 2, width: drawSize.width, height: drawSize.height))
                     }
                     CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
-                    if !adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: Int64(frame), timescale: 30)) { writer.cancelWriting(); continuation.resume(returning: nil); return }
+                    if !adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: Int64(frame), timescale: 30)) {
+                        didFinish = true
+                        writer.cancelWriting()
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    frame += 1
                 }
-                input.markAsFinished()
-                writer.finishWriting { continuation.resume(returning: writer.status == .completed ? output : nil) }
+                if frame >= 150 {
+                    didFinish = true
+                    input.markAsFinished()
+                    writer.finishWriting { continuation.resume(returning: writer.status == .completed ? output : nil) }
+                }
             }
         }
     }
