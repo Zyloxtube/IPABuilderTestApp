@@ -2095,7 +2095,7 @@ struct AccountsListSheet: View {
             accounts = json["users"] as? [[String: Any]] ?? json["accounts"] as? [[String: Any]] ?? json[kind] as? [[String: Any]] ?? []
             error = ""
         } catch {
-            error = "Could not load \(kind): \(error.localizedDescription)"
+            self.error = "Could not load \(kind): \(error.localizedDescription)"
         }
         loading = false
     }
