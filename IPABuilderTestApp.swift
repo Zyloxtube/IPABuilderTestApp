@@ -690,6 +690,7 @@ struct SearchSheet: View {
     @State private var query = ""
     @State private var isTrendingSelected = false
     @State private var showTrendingPage = false
+    @State private var selectedTrendToOpen: String? = nil
     let clips: [FeedClip]
     let onSelectClip: (FeedClip) -> Void
     private let trends = ["#loopchallenge", "#travelcore", "#oddlysatisfying"]
@@ -774,7 +775,10 @@ struct SearchSheet: View {
                         .buttonStyle(.plain)
 
                         ForEach(trends, id: \.self) { tag in
-                            Button { query = tag } label: {
+                            Button {
+                                selectedTrendToOpen = tag
+                                showTrendingPage = true
+                            } label: {
                                 HStack {
                                     Image(systemName: "chart.line.uptrend.xyaxis").foregroundStyle(.pink)
                                     Text(tag).fontWeight(.semibold).foregroundStyle(.white)
@@ -806,7 +810,7 @@ struct SearchSheet: View {
             .navigationTitle("Discover")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(isPresented: $showTrendingPage) {
-                TrendingVideosPage(clips: clips, onSelectClip: { chosen in
+                TrendingVideosPage(clips: clips, initialTrend: selectedTrendToOpen, onSelectClip: { chosen in
                     onSelectClip(chosen)
                     dismiss()
                 })
@@ -822,6 +826,12 @@ struct TrendingVideosPage: View {
     let onSelectClip: (FeedClip) -> Void
     @State private var selectedTrend: String? = nil
     private let trends = ["#loopchallenge", "#travelcore", "#oddlysatisfying"]
+
+    init(clips: [FeedClip], initialTrend: String? = nil, onSelectClip: @escaping (FeedClip) -> Void) {
+        self.clips = clips
+        self.onSelectClip = onSelectClip
+        _selectedTrend = State(initialValue: initialTrend)
+    }
     private let columns = [GridItem(.flexible(), spacing: 2), GridItem(.flexible(), spacing: 2), GridItem(.flexible(), spacing: 2)]
 
     private var trendClips: [FeedClip] {
