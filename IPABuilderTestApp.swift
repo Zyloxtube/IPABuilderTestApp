@@ -1118,7 +1118,7 @@ struct CreateVideoPage: View {
         .task { await requestPermissions() }
         .onDisappear { recorder.stopIfNeeded() }
         .onChange(of: recorder.outputURL) { value in
-            if let value { recordedURL = value; isRecording = false }
+            if let value { recordedURL = value; isRecording = false; showEditor = true }
         }
         .onChange(of: recorder.failureMessage) { value in
             if let value { permissionMessage = value; isRecording = false }
@@ -1265,9 +1265,7 @@ struct SongDetailSheet: View {
                         .buttonStyle(.plain)
                         .contextMenu {
                             Button {
-                                if let url = URL(string: item.videoURL) {
-                                    UISaveVideoAtPathToSavedPhotosAlbum(url.path, nil, nil, nil)
-                                }
+                                downloadVideo(item.videoURL)
                             } label: { Label("Download / Save video", systemImage: "arrow.down.to.line") }
                         }
                     }
@@ -1284,6 +1282,20 @@ struct SongDetailSheet: View {
                 }
             }
         }.preferredColorScheme(.dark)
+    }
+
+    private func downloadVideo(_ rawURL: String) {
+        guard let remoteURL = URL(string: rawURL) else { return }
+        URLSession.shared.downloadTask(with: remoteURL) { temporaryURL, _, error in
+            guard let temporaryURL, error == nil else { return }
+            let localURL = FileManager.default.temporaryDirectory.appendingPathComponent("Leriz-download-\(UUID().uuidString).mp4")
+            do {
+                try FileManager.default.copyItem(at: temporaryURL, to: localURL)
+                DispatchQueue.main.async {
+                    UISaveVideoAtPathToSavedPhotosAlbum(localURL.path, nil, nil, nil)
+                }
+            } catch { }
+        }.resume()
     }
 }
 
