@@ -309,7 +309,7 @@ r'''                    .onReceive(NotificationCenter.default.publisher(for: .AV
                         }
                     }
 ''',
-r'''',
+"" ,
 "remove manual end notification because AVPlayerLooper repeats seamlessly"
 )
 
