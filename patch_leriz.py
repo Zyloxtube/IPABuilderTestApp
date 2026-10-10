@@ -278,5 +278,40 @@ r'''        activeHashtag = ""
 "close hashtag popup after selection"
 )
 
+sub(
+r'''    @State private var player = AVPlayer()
+    @State private var isPlaying = true''',
+r'''    @State private var player = AVQueuePlayer()
+    @State private var playerLooper: AVPlayerLooper?
+    @State private var isPlaying = true''',
+"use AVQueuePlayer for guaranteed looping"
+)
+sub(
+r'''                    .onAppear {
+                        player.replaceCurrentItem(with: AVPlayerItem(url: url))
+                        player.isMuted = false
+                        if isActive { player.play(); isPlaying = true }
+                    }''',
+r'''                    .onAppear {
+                        player.removeAllItems()
+                        playerLooper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(url: url))
+                        player.isMuted = false
+                        if isActive { player.play(); isPlaying = true }
+                    }''',
+"create looping player"
+)
+sub(
+r'''                    .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { notification in
+                        guard let ended = notification.object as? AVPlayerItem,
+                              ended === player.currentItem else { return }
+                        player.seek(to: .zero) { _ in
+                            if isActive && isPlaying { player.play() }
+                        }
+                    }
+''',
+r'''',
+"remove manual end notification because AVPlayerLooper repeats seamlessly"
+)
+
 p.write_text(s, encoding="utf-8")
 print("Leriz client patches applied.")
