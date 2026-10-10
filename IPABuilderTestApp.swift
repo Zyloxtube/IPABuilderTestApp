@@ -198,7 +198,8 @@ struct LerizLaunchView: View {
             withAnimation(.easeInOut(duration: 1.0)) {
                 enterApp = true
             }
-        }    }
+        }
+    }
 }
 
 struct LoopFeedView: View {
@@ -596,7 +597,8 @@ struct CommentsSheet: View {
                                     .overlay(Image(systemName: "person").font(.system(size: 15)).foregroundStyle(.white))
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(["loopfan_24", "noor.exe", "pixelkid"][index % 3])
-                                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)                                    Text(text).font(.system(size: 14))
+                                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                                    Text(text).font(.system(size: 14))
                                     HStack(spacing: 14) {
                                         Text("2h").font(.caption).foregroundStyle(.secondary)
                                         Button("Reply") { comment = "@\(["loopfan_24", "noor.exe", "pixelkid"][index % 3]) "; commentFieldFocused = true }
@@ -899,7 +901,8 @@ struct ProfileSheet: View {
     @Environment(\.dismiss) private var dismiss
     var clip: FeedClip? = nil
     @State private var selectedTab = 0
-    @State private var showEdit = false    var body: some View {
+    @State private var showEdit = false
+    var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
