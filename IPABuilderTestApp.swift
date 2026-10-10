@@ -722,17 +722,25 @@ struct ClipPage: View {
     @State private var showHashtagPage = false
 
     private var linkedCaption: AttributedString {
-        var value = AttributedString(clip.caption)
-        guard let regex = try? NSRegularExpression(pattern: "#([A-Za-z0-9_]{1,50})") else { return value }
-        let nsRange = NSRange(clip.caption.startIndex..<clip.caption.endIndex, in: clip.caption)
-        for match in regex.matches(in: clip.caption, range: nsRange).reversed() {
-            guard let stringRange = Range(match.range, in: clip.caption),
-                  let attributedRange = Range(match.range, in: value) else { continue }
-            let tag = String(clip.caption[stringRange].dropFirst())
-            value[attributedRange].link = URL(string: "leriz://hashtag/\(tag)")
-            value[attributedRange].foregroundColor = UIColor.cyan
+        var result = AttributedString()
+        guard let regex = try? NSRegularExpression(pattern: "#([A-Za-z0-9_]{1,50})") else {
+            return AttributedString(clip.caption)
         }
-        return value
+        let nsRange = NSRange(clip.caption.startIndex..<clip.caption.endIndex, in: clip.caption)
+        let matches = regex.matches(in: clip.caption, range: nsRange)
+        var cursor = clip.caption.startIndex
+        for match in matches {
+            guard let range = Range(match.range, in: clip.caption) else { continue }
+            result += AttributedString(clip.caption[cursor..<range.lowerBound])
+            var tag = AttributedString(clip.caption[range])
+            let name = String(clip.caption[range].dropFirst())
+            tag.link = URL(string: "leriz://hashtag/\(name)")
+            tag.foregroundColor = UIColor.cyan
+            result += tag
+            cursor = range.upperBound
+        }
+        result += AttributedString(clip.caption[cursor...])
+        return result
     }
 
     var body: some View {
