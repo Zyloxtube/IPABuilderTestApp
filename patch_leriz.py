@@ -20,24 +20,24 @@ replace_once(
 '''    static func follow(username: String) async throws {
         let safeUsername = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
         let body = try JSONSerialization.data(withJSONObject: ["username": username])
-        _ = try await request("api/users/\\\\(safeUsername)/follow", method: "POST", body: body)
+        _ = try await request("api/users/\\(safeUsername)/follow", method: "POST", body: body)
     }''',
 '''    static func follow(username: String) async throws -> [String: Any] {
         let safeUsername = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
-        let (profileData, _) = try await request("api/users/\\\\(safeUsername)")
+        let (profileData, _) = try await request("api/users/\\(safeUsername)")
         let profileJSON = (try? JSONSerialization.jsonObject(with: profileData)) as? [String: Any] ?? [:]
         guard let user = profileJSON["user"] as? [String: Any],
               let userID = user["id"] as? String, !userID.isEmpty else {
             throw NSError(domain: "LerizAPI", code: 404, userInfo: [NSLocalizedDescriptionKey: "This profile could not be found."])
         }
-        let (data, _) = try await request("api/users/\\\\(userID)/follow", method: "POST", body: Data("{}".utf8))
+        let (data, _) = try await request("api/users/\\(userID)/follow", method: "POST", body: Data("{}".utf8))
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
     }''',
 "follow resolves username to server user id"
 )
 
 replace_once(
-'''                        .overlay {
+'''                    .overlay {
                         Button {
                             if isPlaying {
                                 player.pause()
@@ -52,9 +52,6 @@ replace_once(
                                     Circle().fill(.black.opacity(0.55)).frame(width: 66, height: 66)
                                         .overlay(Image(systemName: "play.fill").font(.system(size: 25, weight: .bold)).foregroundStyle(.white).offset(x: 2))
                                 }
-                            }
-                        }
-                        .buttonStyle(.plain)
                     }''',
 '''                    .contentShape(Rectangle())
                     .onTapGesture {
@@ -131,7 +128,7 @@ replace_once(
 
 replace_once(
 '''                            await MainActor.run { showDeleteError = "Profile picture upload failed: (error.localizedDescription)" }''',
-'''                            await MainActor.run { showDeleteError = "Profile picture upload failed: \\\\(error.localizedDescription)" }''',
+'''                            await MainActor.run { showDeleteError = "Profile picture upload failed: \\(error.localizedDescription)" }''',
 "avatar upload error interpolation"
 )
 
@@ -171,7 +168,7 @@ replace_once(
 
 replace_once(
 '''                            await MainActor.run { showDeleteError = "Profile picture upload failed: (error.localizedDescription)" }''',
-'''                            await MainActor.run { showDeleteError = "Profile picture upload failed: \\\\(error.localizedDescription)" }''',
+'''                            await MainActor.run { showDeleteError = "Profile picture upload failed: \\(error.localizedDescription)" }''',
 "avatar error interpolation"
 )
 
