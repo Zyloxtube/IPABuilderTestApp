@@ -1111,6 +1111,7 @@ struct CommentsSheet: View {
                             let commentID = index < commentIDs.count ? commentIDs[index] : "local-\(index)"
                             let author = index < commentAuthors.count ? commentAuthors[index] : "user"
                             let isOwnComment = !currentUsername.isEmpty && author.caseInsensitiveCompare(currentUsername) == .orderedSame
+                            let isReply = index < commentParentIDs.count && commentParentIDs[index] != nil
                             HStack(alignment: .top, spacing: 11) {
                                 Button {
                                     let handle = author.trimmingCharacters(in: CharacterSet(charactersIn: "@"))
