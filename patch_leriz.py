@@ -228,5 +228,55 @@ r'''                commentParentIDs = orderedRows.map { row in''',
 "ordered comment parents"
 )
 
+sub(
+r'''    @State private var showCreateHashtag = false
+    @State private var showHashtagSearch = false''',
+r'''    @State private var showCreateHashtag = false
+    @State private var showHashtagSearch = false
+    @State private var showHashtagPopup = false''',
+"hashtag popup visibility state"
+)
+sub(
+r'''            if !activeHashtag.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {''',
+r'''            if showHashtagPopup {
+                VStack(alignment: .leading, spacing: 0) {''',
+"show hashtag popup when # has no letters yet"
+)
+sub(
+r'''        guard let hash = text.lastIndex(of: "#") else { activeHashtag = ""; hashtagMatches = []; return }''',
+r'''        guard let hash = text.lastIndex(of: "#") else { activeHashtag = ""; hashtagMatches = []; showHashtagPopup = false; return }''',
+"hide hashtag popup when hash removed"
+)
+sub(
+r'''        guard !suffix.contains(where: { $0.isWhitespace || $0 == "#" }) else { activeHashtag = ""; hashtagMatches = []; return }''',
+r'''        guard !suffix.contains(where: { $0.isWhitespace || $0 == "#" }) else { activeHashtag = ""; hashtagMatches = []; showHashtagPopup = false; return }''',
+"hide hashtag popup when token ends"
+)
+sub(
+r'''        let prefix = String(suffix)
+        activeHashtag = prefix
+        Task {''',
+r'''        let prefix = String(suffix)
+        activeHashtag = prefix
+        showHashtagPopup = true
+        Task {''',
+"open hashtag popup"
+)
+sub(
+r'''        activeHashtag = ""
+        hashtagMatches = []
+    }
+
+    private func renderTextIntoVideo''',
+r'''        activeHashtag = ""
+        hashtagMatches = []
+        showHashtagPopup = false
+    }
+
+    private func renderTextIntoVideo''',
+"close hashtag popup after selection"
+)
+
 p.write_text(s, encoding="utf-8")
 print("Leriz client patches applied.")
