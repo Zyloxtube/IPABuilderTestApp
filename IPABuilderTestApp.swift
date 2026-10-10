@@ -264,21 +264,21 @@ struct LerizLaunchView: View {
     @State private var username = ""
     @State private var isLoading = false
     @State private var showWelcome = false
+    @State private var isCheckingSession = true
     @State private var enterApp = false
     @State private var authError = ""
     @AppStorage("lerizAuthToken") private var authToken = ""
 
     var body: some View {
         ZStack {
-            if enterApp {
-                LoopFeedView()
-                    .transition(.opacity)
+            if isCheckingSession {
+                launchSplash.transition(.opacity)
+            } else if enterApp {
+                LoopFeedView().transition(.opacity)
             } else if showWelcome {
-                welcomeScreen
-                    .transition(.opacity)
+                welcomeScreen.transition(.opacity)
             } else {
-                authScreen
-                    .transition(.opacity)
+                authScreen.transition(.opacity)
             }
         }
         .background(Color.black.ignoresSafeArea())
@@ -291,15 +291,39 @@ struct LerizLaunchView: View {
 
     @MainActor
     private func restoreExistingSession() async {
-        guard !authToken.isEmpty else { return }
+        guard !authToken.isEmpty else {
+            withAnimation(.easeInOut(duration: 0.45)) { isCheckingSession = false }
+            return
+        }
         do {
             let (_, _) = try await LerizAPI.request("api/me")
-            enterApp = true
-            showWelcome = false
+            withAnimation(.easeInOut(duration: 0.45)) {
+                enterApp = true
+                showWelcome = false
+                isCheckingSession = false
+            }
         } catch {
-            // Expired/revoked tokens should not trap the app on a loading screen.
             authToken = ""
-            enterApp = false
+            withAnimation(.easeInOut(duration: 0.45)) {
+                enterApp = false
+                isCheckingSession = false
+            }
+        }
+    }
+
+    private var launchSplash: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            Circle().fill(.purple.opacity(0.22)).frame(width: 240).blur(radius: 75).offset(x: 110, y: -170)
+            Circle().fill(.cyan.opacity(0.16)).frame(width: 230).blur(radius: 75).offset(x: -100, y: 190)
+            VStack(spacing: 16) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 27).fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 82, height: 82)
+                    Image(systemName: "infinity").font(.system(size: 46, weight: .medium)).foregroundStyle(.white)
+                }.shadow(color: .purple.opacity(0.4), radius: 26, y: 8)
+                Text("Leriz").font(.system(size: 40, weight: .black, design: .rounded)).tracking(-1.5)
+                ProgressView().tint(.white).padding(.top, 8)
+            }
         }
     }
 
@@ -491,12 +515,10 @@ struct LerizLaunchView: View {
                 if !serverUsername.isEmpty { UserDefaults.standard.set(serverUsername, forKey: "lerizUsername") }
                 else if let emailName = email.split(separator: "@").first { UserDefaults.standard.set(String(emailName), forKey: "lerizUsername") }
             }
-            withAnimation(.easeInOut(duration: 0.65)) {
+            withAnimation(.easeInOut(duration: 0.45)) {
                 isLoading = false
-                showWelcome = true
-            }
-            try? await Task.sleep(nanoseconds: 1_700_000_000)
-            withAnimation(.easeInOut(duration: 1.0)) {
+                showWelcome = false
+                isCheckingSession = false
                 enterApp = true
             }
         } catch {
