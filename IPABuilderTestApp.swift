@@ -848,7 +848,10 @@ struct CommentsSheet: View {
     @AppStorage("lerizUsername") private var currentUsername = ""
     @State private var commentError = ""
     @State private var showEmojiPicker = false
-    @AppStorage("lerizLikedCommentIDs") private var likedCommentIDsJSON = "[]"\n    @State private var likedComments: Set<String> = []\n    @State private var replyToID: String? = nil\n    @State private var replyToAuthor = ""
+    @AppStorage("lerizLikedCommentIDs") private var likedCommentIDsJSON = "[]"
+    @State private var likedComments: Set<String> = []
+    @State private var replyToID: String? = nil
+    @State private var replyToAuthor = ""
     @State private var previewPlayer = AVPlayer()
     @FocusState private var commentFieldFocused: Bool
 
@@ -1002,7 +1005,7 @@ struct CommentsSheet: View {
             await MainActor.run {
                 if wasLiked { likedComments.insert(commentID) } else { likedComments.remove(commentID) }
                 likedCommentIDsJSON = String(data: (try? JSONEncoder().encode(Array(likedComments))) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
-                commentError = "Comment like could not sync: \\(error.localizedDescription)"
+                commentError = "Comment like could not sync: \(error.localizedDescription)"
             }
         }
     }
@@ -1038,7 +1041,7 @@ struct CommentsSheet: View {
                 try await LerizAPI.postComment(videoID: videoID, text: displayedText, parentID: parentID)
                 await MainActor.run {
                     posted.insert(displayedText, at: 0)
-                    commentIDs.insert(parentID == nil ? "local-\(UUID().uuidString)" : "reply:\\(UUID().uuidString)", at: 0)
+                    commentIDs.insert(parentID == nil ? "local-\(UUID().uuidString)" : "reply:\(UUID().uuidString)", at: 0)
                     commentAuthors.insert(currentUsername.isEmpty ? "user" : currentUsername, at: 0)
                     comment = ""
                     replyToID = nil
