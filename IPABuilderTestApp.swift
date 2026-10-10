@@ -1026,21 +1026,13 @@ struct CreateVideoPage: View {
     let onPost: (String, URL) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var caption = ""
-    @State private var selectedFilter = 1
     @State private var isRecording = false
     @State private var recordedURL: URL?
-    @State private var showPost = false
+    @State private var showEditor = false
     @State private var permissionMessage: String?
     @State private var permissionsGranted = false
-    @State private var busy = false
-    @State private var isStopping = false
     @State private var isBackCamera = false
-    @State private var recordingStartedAt: Date? = nil
-    @StateObject private var recorder = LoopScreenRecorder()
-
-    private let filters: [(String, FaceEffect)] = [
-        ("None", .none), ("Dog", .dog), ("Cat", .cat), ("Robot", .robot), ("Glasses", .glasses)
-    ]
+    @StateObject private var recorder = LoopCameraRecorder()
 
     var body: some View {
         ZStack {
@@ -1051,195 +1043,190 @@ struct CreateVideoPage: View {
                     Spacer()
                     Text("Create").font(.headline.bold())
                     Spacer()
-                    Button("Next") { showPost = true }.fontWeight(.bold).disabled(recordedURL == nil)
-                }
-                .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 12)
+                    Button("Next") { showEditor = true }.fontWeight(.bold).disabled(recordedURL == nil)
+                }.padding(.horizontal, 18).padding(.vertical, 12)
 
                 ZStack(alignment: .bottom) {
-                    Group {
-                        if permissionsGranted {
-                            if isBackCamera {
-                                BackCameraPreview(position: .back)
-                            } else if ARFaceTrackingConfiguration.isSupported {
-                                FaceCameraView(effect: filters[selectedFilter].1)
-                            } else {
-                                BackCameraPreview(position: .front)
-                            }
-                        } else {
-                            ZStack {
-                                Color.black
-                                VStack(spacing: 12) {
-                                    if permissionMessage == nil {
-                                        ProgressView().tint(.white)
-                                        Text("Preparing camera…").font(.caption).foregroundStyle(.white.opacity(0.75))
-                                    } else {
-                                        Image(systemName: "camera.fill").font(.system(size: 30)).foregroundStyle(.white.opacity(0.7))
-                                        Text(permissionMessage ?? "Camera unavailable").font(.caption).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.85)).padding(.horizontal, 24)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 22))
-                    .padding(.horizontal, 10)
-                    .contentShape(RoundedRectangle(cornerRadius: 22))
-                    .onTapGesture(count: 2) {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) { isBackCamera.toggle() }
-                    }
-                    LinearGradient(colors: [.clear, .black.opacity(0.5)], startPoint: .center, endPoint: .bottom)
-                        .frame(height: 145)
+                    CameraCapturePreview(session: recorder.session)
                         .clipShape(RoundedRectangle(cornerRadius: 22))
                         .padding(.horizontal, 10)
-                        .allowsHitTesting(false)
+                    LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .center, endPoint: .bottom)
+                        .frame(height: 130).clipShape(RoundedRectangle(cornerRadius: 22))
+                        .padding(.horizontal, 10).allowsHitTesting(false)
                     VStack(spacing: 8) {
                         if let permissionMessage {
                             Text(permissionMessage).font(.caption).multilineTextAlignment(.center)
-                                .padding(10).background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 10))
+                                .padding(10).background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 10))
                         }
                         if let recordedURL {
-                            Label("Recording ready", systemImage: "checkmark.circle.fill")
+                            Label("Recording ready · tap Next to edit", systemImage: "checkmark.circle.fill")
                                 .font(.caption.bold()).foregroundStyle(.green)
                         } else {
-                            Text("Face effects need a TrueDepth front camera")
-                                .font(.caption2).foregroundStyle(.white.opacity(0.8))                        }
-                    }.padding(.bottom, 16)
-                }
-                .frame(maxHeight: .infinity)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 18) {
-                        ForEach(filters.indices, id: \.self) { index in
-                            Button { selectedFilter = index } label: {
-                                VStack(spacing: 7) {
-                                    ZStack {
-                                        Circle().fill(LinearGradient(colors: index == selectedFilter ? [.cyan, .purple] : [.white.opacity(0.16), .white.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                            .frame(width: 58, height: 58)
-                                        Image(systemName: filterSymbol(index))
-                                            .font(.system(size: 24, weight: .medium)).foregroundStyle(.white)
-                                        if index == selectedFilter {
-                                            Circle().stroke(.white, lineWidth: 2).frame(width: 64, height: 64)
-                                        }
-                                    }
-                                    Text(filters[index].0).font(.caption2.weight(index == selectedFilter ? .bold : .medium))
-                                        .foregroundStyle(index == selectedFilter ? .white : .white.opacity(0.7))
-                                }
-                            }.buttonStyle(.plain)
+                            Text("Record directly from the selected camera")
+                                .font(.caption2).foregroundStyle(.white.opacity(0.8))
                         }
-                    }.padding(.horizontal, 22).padding(.vertical, 12)
-                }
+                    }.padding(.bottom, 16)
+                }.frame(maxHeight: .infinity)
 
                 HStack {
                     Button {
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) { isBackCamera.toggle() }
-                        permissionMessage = nil
+                        isBackCamera.toggle()
+                        recorder.switchCamera(to: isBackCamera ? .back : .front) { error in
+                            if let error { permissionMessage = error }
+                        }
                     } label: {
                         Image(systemName: "arrow.triangle.2.circlepath.camera").font(.system(size: 23))
                             .foregroundStyle(.white).frame(width: 54, height: 58)
                     }
                     Spacer()
-                    Button(action: toggleRecording) {
-                        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isRecording || recordingStartedAt == nil)) { timeline in
-                            let elapsed = timeline.date.timeIntervalSince(recordingStartedAt ?? timeline.date)
-                            let progress = min(max(elapsed / 60.0, 0), 1)
-                            ZStack {
-                                Circle().fill(.white).frame(width: 84, height: 84)
-                                Circle().stroke(Color.red.opacity(0.18), lineWidth: 4).frame(width: 75, height: 75)
-                                Circle().trim(from: 0, to: isRecording ? max(progress, 0.015) : 1)
-                                    .stroke(Color.red, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                                    .rotationEffect(.degrees(-90)).frame(width: 75, height: 75)
-                                RoundedRectangle(cornerRadius: isRecording ? 7 : 30)
-                                    .fill(Color(red: 0.98, green: 0.16, blue: 0.37))
-                                    .frame(width: isRecording ? 28 : 60, height: isRecording ? 28 : 60)
-                                    .animation(.spring(response: 0.28, dampingFraction: 0.68), value: isRecording)
-                            }.frame(width: 88, height: 88)
+                    Button {
+                        if isRecording {
+                            recorder.stop()
+                        } else {
+                            recordedURL = nil
+                            permissionMessage = nil
+                            isRecording = true
+                            recorder.start { error in
+                                if let error { permissionMessage = error; isRecording = false }
+                            }
                         }
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isStopping || !permissionsGranted)
+                    } label: {
+                        ZStack {
+                            Circle().stroke(.white.opacity(0.9), lineWidth: 4).frame(width: 78, height: 78)
+                            RoundedRectangle(cornerRadius: isRecording ? 7 : 30)
+                                .fill(Color(red: 0.98, green: 0.16, blue: 0.37))
+                                .frame(width: isRecording ? 28 : 60, height: isRecording ? 28 : 60)
+                                .animation(.spring(response: 0.28, dampingFraction: 0.68), value: isRecording)
+                        }.frame(width: 88, height: 88)
+                    }.buttonStyle(.plain).disabled(!permissionsGranted)
                     Spacer()
                     Button {
-                        if let url = recordedURL { UISaveVideoAtPathToSavedPhotosAlbum(url.path, nil, nil, nil); permissionMessage = "Saved recording to Photos." }
+                        if let url = recordedURL {
+                            UISaveVideoAtPathToSavedPhotosAlbum(url.path, nil, nil, nil)
+                            permissionMessage = "Saved recording to Photos."
+                        }
                     } label: {
                         Image(systemName: "square.and.arrow.down").font(.system(size: 23))
                             .foregroundStyle(recordedURL == nil ? .white.opacity(0.35) : .white).frame(width: 54, height: 58)
                     }.disabled(recordedURL == nil)
-                }.padding(.horizontal, 35).padding(.top, 4).padding(.bottom, 18)
-
-                Text(isRecording ? "RECORDING · tap the red button to stop" : "Record a video with a live face effect")
+                }.padding(.horizontal, 35).padding(.top, 12).padding(.bottom, 18)
+                Text(isRecording ? "RECORDING · tap the red button to stop" : "Record a video with your camera")
                     .font(.caption2).foregroundStyle(.secondary).padding(.bottom, 12)
             }
         }
         .preferredColorScheme(.dark)
         .task { await requestPermissions() }
-        .onDisappear {
-            recorder.stopIfNeeded()
-        }
+        .onDisappear { recorder.stopIfNeeded() }
         .onChange(of: recorder.outputURL) { value in
-            if let value {
-                recordedURL = value; isRecording = false; busy = false; isStopping = false; recordingStartedAt = nil
-            }
+            if let value { recordedURL = value; isRecording = false }
         }
         .onChange(of: recorder.failureMessage) { value in
-            guard let value else { return }
-            isRecording = false; busy = false; isStopping = false; recordingStartedAt = nil
-            permissionMessage = value
+            if let value { permissionMessage = value; isRecording = false }
         }
-        .sheet(isPresented: $showPost) {
-            NavigationStack {
-                Form {
-                    Section("Your video") {
-                        TextField("Write a caption…", text: $caption, axis: .vertical)
-                        LabeledContent("Face effect", value: filters[selectedFilter].0)
-                        if let recordedURL {
-                            VideoPlayer(player: AVPlayer(url: recordedURL)).frame(height: 240).listRowInsets(EdgeInsets())
-                        }
-                    }
-                    Section {
-                        Button("Post to Leriz") {
-                            guard let url = recordedURL else { return }
-                            onPost(caption, url)
-                        }.fontWeight(.bold).disabled(recordedURL == nil)
-                    }
-                }.navigationTitle("New post").navigationBarTitleDisplayMode(.inline)
-            }.preferredColorScheme(.dark)
+        .fullScreenCover(isPresented: $showEditor) {
+            if let url = recordedURL {
+                VideoEditorView(url: url) { text, editedURL in
+                    onPost(text, editedURL)
+                }
+            }
         }
-    }
-
-    private func filterSymbol(_ index: Int) -> String {
-        ["face.smiling", "pawprint.fill", "cat.fill", "theatermasks.fill", "eyeglasses"][index]
     }
 
     @MainActor
     private func requestPermissions() async {
         let cameraOK = await AVCaptureDevice.requestAccess(for: .video)
         guard cameraOK else { permissionMessage = "Camera permission is required."; return }
-        let micOK = await withCheckedContinuation { continuation in
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in continuation.resume(returning: granted) }
-        }
+        let micOK = await AVCaptureDevice.requestAccess(for: .audio)
         guard micOK else { permissionMessage = "Microphone permission is required to record sound."; return }
-        permissionMessage = nil
-        if !ARFaceTrackingConfiguration.isSupported { isBackCamera = true }
-        permissionsGranted = true
+        recorder.configure(position: .front) { error in
+            if let error { permissionMessage = error } else { permissionsGranted = true }
+        }
     }
+}
 
-    private func toggleRecording() {
-        if isRecording {
-            guard !isStopping else { return }
-            isStopping = true
-            recorder.stop()
-        } else {
-            guard permissionsGranted, !busy else { return }
-            recordedURL = nil; permissionMessage = nil; recordingStartedAt = Date(); isStopping = false
-            isRecording = true; busy = true
-            recorder.start { error in
-                DispatchQueue.main.async {
-                    if let error {
-                        isRecording = false; busy = false; isStopping = false; recordingStartedAt = nil
-                        permissionMessage = error
+struct VideoEditorView: View {
+    let url: URL
+    let onPost: (String, URL) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    @State private var textColor = Color.white
+    @State private var opacity = 1.0
+    @State private var useGradient = false
+    @State private var useBorder = false
+    @State private var showTextTools = false
+    @State private var textOffset = CGSize.zero
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                ZStack {
+                    VideoPlayer(player: AVPlayer(url: url))
+                    if !text.isEmpty {
+                        Text(text)
+                            .font(.system(size: 28, weight: .black, design: .rounded))
+                            .foregroundStyle(useGradient ? AnyShapeStyle(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .leading, endPoint: .trailing)) : AnyShapeStyle(textColor))
+                            .padding(5)
+                            .background(useBorder ? Color.black.opacity(0.48) : .clear, in: RoundedRectangle(cornerRadius: 5))
+                            .overlay { if useBorder { RoundedRectangle(cornerRadius: 5).stroke(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .leading, endPoint: .trailing), lineWidth: 2) } }
+                            .opacity(opacity)
+                            .offset(textOffset)
+                            .gesture(DragGesture().onChanged { textOffset = $0.translation })
                     }
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .padding(.horizontal, 12)
+                HStack {
+                    TextField("Write a caption…", text: $text, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                    Button { showTextTools = true } label: {
+                        Image(systemName: "textformat").font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(.white).frame(width: 46, height: 46)
+                            .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .accessibilityLabel("Text styling")
+                }.padding(.horizontal, 14)
+                Text("Drag text on the video to position it").font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
             }
-        }
+            .background(Color.black)
+            .navigationTitle("Edit video").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("Back") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Post") { onPost(text, url) }.fontWeight(.bold)
+                }
+            }
+            .sheet(isPresented: $showTextTools) {
+                NavigationStack {
+                    Form {
+                        Section("Text") {
+                            TextField("Your text", text: $text, axis: .vertical)
+                            Button(role: .destructive) { text = "" } label: { Label("Delete text", systemImage: "trash") }
+                        }
+                        Section("Color") {
+                            HStack(spacing: 18) {
+                                colorButton(.white); colorButton(.yellow); colorButton(.cyan); colorButton(.pink); colorButton(.green)
+                            }
+                            Toggle("Gradient text", isOn: $useGradient)
+                            Toggle("Border", isOn: $useBorder)
+                            VStack(alignment: .leading) {
+                                Text("Transparency · \(Int(opacity * 100))%")
+                                Slider(value: $opacity, in: 0...1)
+                            }
+                        }
+                    }
+                    .navigationTitle("Text style").navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showTextTools = false } } }
+                }.presentationDetents([.medium, .large]).preferredColorScheme(.dark)
+            }
+        }.preferredColorScheme(.dark)
+    }
+
+    private func colorButton(_ color: Color) -> some View {
+        Button { textColor = color; useGradient = false } label: {
+            Circle().fill(color).frame(width: 30, height: 30)
+                .overlay(Circle().stroke(.white.opacity(textColor == color ? 1 : 0.2), lineWidth: 2))
+        }.buttonStyle(.plain)
     }
 }
 
@@ -1253,351 +1240,209 @@ struct SongDetailSheet: View {
         clips.filter { $0.song.localizedCaseInsensitiveCompare(clip.song) == .orderedSame }
             .sorted { $0.views > $1.views }
     }
+    private var gridClips: [FeedClip] {
+        let sorted = songClips
+        return stride(from: 0, to: sorted.count, by: 3).flatMap { start in
+            Array(sorted[start..<min(start + 3, sorted.count)].reversed())
+        }
+    }
+    private let columns = [GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3)]
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    HStack(alignment: .top, spacing: 18) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 24).fill(LinearGradient(colors: [clip.accent, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 112, height: 112)
-                            Image(systemName: "opticaldisc").font(.system(size: 65)).foregroundStyle(.white)
+                LazyVGrid(columns: columns, spacing: 3) {
+                    ForEach(gridClips) { item in
+                        Button {
+                            onSelectClip(item)
+                            dismiss()
+                        } label: {
+                            SongGridVideoTile(clip: item)
+                                .aspectRatio(9.0 / 16.0, contentMode: .fit)
+                                .frame(maxWidth: .infinity)
+                                .clipped()
                         }
-                        VStack(alignment: .leading, spacing: 9) {
-                            Text("SOUND").font(.caption.bold()).tracking(1.8).foregroundStyle(.cyan)
-                            Text(clip.song).font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
-                            Text("\(songClips.count) \(songClips.count == 1 ? "video uses" : "videos use") this sound").font(.subheadline).foregroundStyle(.secondary)
-                            Label("Leriz sound", systemImage: "music.note").font(.caption).foregroundStyle(.white.opacity(0.75))
-                        }
-                        Spacer(minLength: 0)
-                    }.padding(18).background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 22))
-                    HStack {
-                        Text("TRENDING VIDEOS").font(.caption.bold()).tracking(1.5).foregroundStyle(.secondary)
-                        Spacer()
-                        Text("Most viewed first").font(.caption2).foregroundStyle(.secondary)
-                    }
-                    if songClips.isEmpty {
-                        VStack(spacing: 10) {
-                            Image(systemName: "music.note").font(.system(size: 30)).foregroundStyle(.secondary)
-                            Text("No videos yet").font(.headline)
-                            Text("Videos using this sound will appear here.").font(.caption).foregroundStyle(.secondary)
-                        }.frame(maxWidth: .infinity).padding(.vertical, 35)
-                    } else {
-                        ForEach(Array(songClips.enumerated()), id: \.element.id) { index, item in
+                        .buttonStyle(.plain)
+                        .contextMenu {
                             Button {
-                                onSelectClip(item); dismiss()
-                            } label: {
-                                HStack(spacing: 13) {
-                                    ZStack(alignment: .topLeading) {
-                                        RoundedRectangle(cornerRadius: 13).fill(item.accent.gradient).frame(width: 94, height: 116)
-                                        Image(systemName: item.symbol).font(.system(size: 30, weight: .semibold)).foregroundStyle(.white).frame(width: 94, height: 116)
-                                        Text("#\(index + 1)").font(.caption2.bold()).padding(6).background(.black.opacity(0.65), in: Capsule()).padding(6)
-                                    }
-                                    VStack(alignment: .leading, spacing: 7) {
-                                        Text(item.caption).font(.system(size: 14, weight: .bold)).foregroundStyle(.white).lineLimit(3)
-                                        Text("\(item.creator)  ·  \(item.handle)").font(.caption).foregroundStyle(.white.opacity(0.7))
-                                        Label("\(item.views.formatted()) views", systemImage: "play.rectangle").font(.caption.bold()).foregroundStyle(.cyan)
-                                        Text(item.tags).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                                    }
-                                    Spacer(minLength: 0)
-                                    Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(.white.opacity(0.8))                                }.padding(10).background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 16))
-                            }.buttonStyle(.plain)
+                                if let url = URL(string: item.videoURL) {
+                                    UISaveVideoAtPathToSavedPhotosAlbum(url.path, nil, nil, nil)
+                                }
+                            } label: { Label("Download / Save video", systemImage: "arrow.down.to.line") }
                         }
                     }
-                }.padding(18)
+                }
+                .padding(.horizontal, 3)
+                .padding(.top, 3)
             }
             .background(Color.black)
-            .navigationTitle("Sound").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarLeading) { Button { dismiss() } label: { Image(systemName: "chevron.left").fontWeight(.semibold) } } }
+            .navigationTitle(clip.song)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: { Image(systemName: "chevron.left").fontWeight(.semibold) }
+                }
+            }
         }.preferredColorScheme(.dark)
     }
 }
 
-struct BackCameraPreview: UIViewRepresentable {
-    var position: AVCaptureDevice.Position = .back
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView(frame: .zero); view.backgroundColor = .black
-        let session = AVCaptureSession(); session.sessionPreset = .high
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position),
-              let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else { return view }
-        session.addInput(input)
-        let layer = AVCaptureVideoPreviewLayer(session: session); layer.videoGravity = .resizeAspectFill
-        view.layer.addSublayer(layer)
-        context.coordinator.session = session; context.coordinator.previewLayer = layer; context.coordinator.start()
-        return view
+struct SongGridVideoTile: View {
+    let clip: FeedClip
+    @State private var player = AVPlayer()
+    @State private var frameIndex = 0
+    private let frameCount = 6
+
+    var body: some View {
+        PlayerSurface(player: player)
+            .frame(maxWidth: .infinity)
+            .aspectRatio(9.0 / 16.0, contentMode: .fit)
+            .background(clip.accent.gradient)
+            .clipped()
+            .onAppear {
+                guard let url = URL(string: clip.videoURL) else { return }
+                player.replaceCurrentItem(with: AVPlayerItem(url: url))
+                player.isMuted = true
+                player.pause()
+                seekPreview()
+            }
+            .onReceive(Timer.publish(every: 1.0 / 3.0, on: .main, in: .common).autoconnect()) { _ in
+                guard player.currentItem != nil else { return }
+                frameIndex = (frameIndex + 1) % frameCount
+                seekPreview()
+            }
+            .onDisappear { player.pause() }
     }
-    func updateUIView(_ view: UIView, context: Context) { context.coordinator.previewLayer?.frame = view.bounds }
-    static func dismantleUIView(_ view: UIView, coordinator: Coordinator) { coordinator.stop() }
-    final class Coordinator {
-        var session: AVCaptureSession?
-        var previewLayer: AVCaptureVideoPreviewLayer?
-        private let queue = DispatchQueue(label: "leriz.back-camera")
-        func start() { queue.async { [weak self] in
-            guard let self, let session = self.session, !session.isRunning else { return }; session.startRunning()
-        } }
-        func stop() { queue.sync {
-            guard let session = self.session, session.isRunning else { return }; session.stopRunning()
-        } }
+
+    private func seekPreview() {
+        player.seek(to: CMTime(seconds: Double(frameIndex) / 3.0, preferredTimescale: 600),
+                    toleranceBefore: .zero, toleranceAfter: .zero)
     }
 }
 
-enum FaceEffect: Int {
-    case none, dog, cat, robot, glasses
-}
-
-struct FaceCameraView: UIViewRepresentable {
-    let effect: FaceEffect
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeUIView(context: Context) -> ARSCNView {
-        let view = ARSCNView(frame: .zero)
+struct CameraCapturePreview: UIViewRepresentable {
+    let session: AVCaptureSession
+    func makeUIView(context: Context) -> PreviewView {
+        let view = PreviewView()
         view.backgroundColor = .black
-        view.automaticallyUpdatesLighting = true
-        view.delegate = context.coordinator
-        context.coordinator.sceneView = view
-        guard ARFaceTrackingConfiguration.isSupported else { return view }
-        let config = ARFaceTrackingConfiguration()
-        config.isLightEstimationEnabled = true
-        view.session.run(config, options: [.resetTracking, .removeExistingAnchors])
-        context.coordinator.setEffect(effect)
+        view.videoPreviewLayer.videoGravity = .resizeAspectFill
+        view.videoPreviewLayer.session = session
         return view
     }
-
-    func updateUIView(_ view: ARSCNView, context: Context) {
-        context.coordinator.setEffect(effect)
+    func updateUIView(_ view: PreviewView, context: Context) {
+        if view.videoPreviewLayer.session !== session { view.videoPreviewLayer.session = session }
     }
-
-    static func dismantleUIView(_ view: ARSCNView, coordinator: Coordinator) {
-        view.session.pause()
-    }
-
-    final class Coordinator: NSObject, ARSCNViewDelegate {
-        weak var sceneView: ARSCNView?
-        var effect: FaceEffect = .dog
-
-        func setEffect(_ newEffect: FaceEffect) {
-            effect = newEffect
-            guard let anchors = sceneView?.scene.rootNode.childNodes else { return }
-            for node in anchors { removeEffectNodes(from: node) }
-            for anchor in (sceneView?.session.currentFrame?.anchors ?? []) {
-                if let face = anchor as? ARFaceAnchor, let node = sceneView?.node(for: face) {
-                    addEffectNodes(to: node, effect: newEffect)
-                }
-            }
-        }
-
-        func renderer(_ renderer: SCNSceneRenderer, nodeFor anchor: ARAnchor) -> SCNNode? {
-            guard anchor is ARFaceAnchor else { return nil }
-            let root = SCNNode()
-            addEffectNodes(to: root, effect: effect)
-            return root
-        }
-
-        func renderer(_ renderer: SCNSceneRenderer, didUpdate node: SCNNode, for anchor: ARAnchor) {
-            guard anchor is ARFaceAnchor else { return }
-            removeEffectNodes(from: node)
-            addEffectNodes(to: node, effect: effect)
-        }
-
-        private func removeEffectNodes(from root: SCNNode) {
-            root.childNodes.filter { $0.name == "loop-face-effect" }.forEach { $0.removeFromParentNode() }
-        }
-
-        private func addEffectNodes(to root: SCNNode, effect: FaceEffect) {
-            guard effect != .none else { return }
-            let group = SCNNode()
-            group.name = "loop-face-effect"
-            switch effect {
-            case .none: break
-            case .dog:
-                let brown = UIColor(red: 0.56, green: 0.30, blue: 0.13, alpha: 1)
-                group.addChildNode(ear(x: -0.073, tilt: -0.32, color: brown))
-                group.addChildNode(ear(x: 0.073, tilt: 0.32, color: brown))
-                group.addChildNode(sphere(position: SCNVector3(0, -0.035, 0.105), scale: SCNVector3(0.035, 0.027, 0.025), color: UIColor.black))
-                group.addChildNode(sphere(position: SCNVector3(0, -0.075, 0.09), scale: SCNVector3(0.025, 0.012, 0.012), color: UIColor.systemPink))
-            case .cat:
-                group.addChildNode(catEar(x: -0.07))
-                group.addChildNode(catEar(x: 0.07))
-                group.addChildNode(sphere(position: SCNVector3(0, -0.035, 0.105), scale: SCNVector3(0.018, 0.014, 0.012), color: UIColor.systemPink))
-                group.addChildNode(whisker(x: -0.045, y: -0.05, rotation: -0.12))
-                group.addChildNode(whisker(x: 0.045, y: -0.05, rotation: 0.12))
-            case .robot:
-                let mask = SCNBox(width: 0.15, height: 0.07, length: 0.025, chamferRadius: 0.012)
-                let node = SCNNode(geometry: mask)
-                node.position = SCNVector3(0, -0.045, 0.09)
-                node.geometry?.firstMaterial?.diffuse.contents = UIColor.systemTeal
-                node.geometry?.firstMaterial?.metalness.contents = 0.7
-                group.addChildNode(node)
-                for x: Float in [-0.035, 0.035] {
-                    group.addChildNode(sphere(position: SCNVector3(x, -0.015, 0.11), scale: SCNVector3(0.012, 0.012, 0.008), color: UIColor.cyan))
-                }
-            case .glasses:
-                for x: Float in [-0.037, 0.037] {
-                    let ring = SCNTorus(ringRadius: 0.025, pipeRadius: 0.004)
-                    ring.firstMaterial?.diffuse.contents = UIColor.black
-                    let node = SCNNode(geometry: ring)
-                    node.position = SCNVector3(x, 0.025, 0.105)
-                    group.addChildNode(node)
-                }
-                let bridge = SCNCylinder(radius: 0.003, height: 0.035)
-                bridge.firstMaterial?.diffuse.contents = UIColor.black
-                let node = SCNNode(geometry: bridge)
-                node.eulerAngles.z = Float.pi / 2
-                node.position = SCNVector3(0, 0.025, 0.105)
-                group.addChildNode(node)
-            }
-            root.addChildNode(group)
-        }
-
-        private func sphere(position: SCNVector3, scale: SCNVector3, color: UIColor) -> SCNNode {
-            let geometry = SCNSphere(radius: 1)
-            geometry.firstMaterial?.diffuse.contents = color
-            let node = SCNNode(geometry: geometry)
-            node.position = position
-            node.scale = scale
-            return node
-        }
-
-        private func ear(x: Float, tilt: Float, color: UIColor) -> SCNNode {
-            let geometry = SCNSphere(radius: 1)
-            geometry.firstMaterial?.diffuse.contents = color
-            let node = SCNNode(geometry: geometry)
-            node.position = SCNVector3(x, 0.09, 0.015)
-            node.scale = SCNVector3(0.035, 0.065, 0.018)
-            node.eulerAngles.z = tilt
-            return node
-        }
-
-        private func catEar(x: Float) -> SCNNode {
-            let geometry = SCNCone(topRadius: 0, bottomRadius: 0.035, height: 0.07)
-            geometry.firstMaterial?.diffuse.contents = UIColor.systemPink
-            let node = SCNNode(geometry: geometry)
-            node.position = SCNVector3(x, 0.09, 0.015)
-            node.eulerAngles.z = x < 0 ? 0.28 : -0.28
-            return node
-        }
-
-        private func whisker(x: Float, y: Float, rotation: Float) -> SCNNode {
-            let geometry = SCNCylinder(radius: 0.0015, height: 0.07)
-            geometry.firstMaterial?.diffuse.contents = UIColor.white
-            let node = SCNNode(geometry: geometry)
-            node.position = SCNVector3(x, y, 0.095)
-            node.eulerAngles.z = rotation
-            return node
-        }
+    final class PreviewView: UIView {
+        override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
+        var videoPreviewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
     }
 }
 
-final class LoopScreenRecorder: ObservableObject {
+final class LoopCameraRecorder: NSObject, ObservableObject, AVCaptureFileOutputRecordingDelegate {
+    let session = AVCaptureSession()
+    private let movieOutput = AVCaptureMovieFileOutput()
+    private let sessionQueue = DispatchQueue(label: "leriz.camera-capture")
+    private var currentPosition: AVCaptureDevice.Position = .front
     @Published private(set) var outputURL: URL?
     @Published private(set) var failureMessage: String?
-    private let recorder = RPScreenRecorder.shared()
-    private var writer: AVAssetWriter?
-    private var videoInput: AVAssetWriterInput?
-    private var audioInput: AVAssetWriterInput?
-    private var sessionStarted = false
-    private var stopping = false
-    private var startCompletion: ((String?) -> Void)?
-    private let queue = DispatchQueue(label: "loop.screen-recorder")
 
-    func start(completion: @escaping (String?) -> Void) {
-        outputURL = nil
-        failureMessage = nil
-        sessionStarted = false
-        stopping = false
-        startCompletion = completion
-        guard recorder.isAvailable else {
-            completion("Screen recording is unavailable on this device.")
-            return
-        }
-        recorder.isMicrophoneEnabled = true
-        recorder.startCapture(handler: { [weak self] sample, type, error in
-            guard let self, error == nil else { return }
-            self.queue.async {
-                if type == .video {
-                    self.prepareWriterIfNeeded(sample)
-                    guard let writer = self.writer, let input = self.videoInput else { return }
-                    let time = CMSampleBufferGetPresentationTimeStamp(sample)
-                    if writer.status == .unknown {
-                        writer.startWriting()
-                        writer.startSession(atSourceTime: time)
-                        self.sessionStarted = true
-                        DispatchQueue.main.async { self.startCompletion?(nil); self.startCompletion = nil }
-                    }
-                    if input.isReadyForMoreMediaData { input.append(sample) }
-                } else if type == .audioMic, self.sessionStarted, let input = self.audioInput, input.isReadyForMoreMediaData {
-                    input.append(sample)
-                }
+    func configure(position: AVCaptureDevice.Position, completion: @escaping (String?) -> Void) {
+        sessionQueue.async {
+            do {
+                self.session.beginConfiguration()
+                self.session.sessionPreset = .high
+                try self.installVideoInput(position: position)
+                if let mic = AVCaptureDevice.default(for: .audio),
+                   let audioInput = try? AVCaptureDeviceInput(device: mic),
+                   self.session.canAddInput(audioInput) { self.session.addInput(audioInput) }
+                if self.session.canAddOutput(self.movieOutput) { self.session.addOutput(self.movieOutput) }
+                self.session.commitConfiguration()
+                self.currentPosition = position
+                self.session.startRunning()
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                self.session.commitConfiguration()
+                DispatchQueue.main.async { completion("Could not open camera: \(error.localizedDescription)") }
             }
-        }, completionHandler: { [weak self] error in
-            if let error { DispatchQueue.main.async { completion("Could not start recording: \(error.localizedDescription)") } }
-        })
+        }
     }
 
-    private func prepareWriterIfNeeded(_ sample: CMSampleBuffer) {
-        guard writer == nil,
-              let description = CMSampleBufferGetFormatDescription(sample) else { return }
-        let dimensions = CMVideoFormatDescriptionGetDimensions(description)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Leriz-\(UUID().uuidString).mp4")
-        do {
-            let assetWriter = try AVAssetWriter(outputURL: url, fileType: .mp4)
-            let video = AVAssetWriterInput(mediaType: .video, outputSettings: [
-                AVVideoCodecKey: AVVideoCodecType.h264,
-                AVVideoWidthKey: Int(dimensions.width),
-                AVVideoHeightKey: Int(dimensions.height)
-            ])
-            video.expectsMediaDataInRealTime = true
-            let audio = AVAssetWriterInput(mediaType: .audio, outputSettings: [
-                AVFormatIDKey: kAudioFormatMPEG4AAC,
-                AVSampleRateKey: 44100,
-                AVNumberOfChannelsKey: 1,
-                AVEncoderBitRateKey: 96000
-            ])
-            audio.expectsMediaDataInRealTime = true
-            if assetWriter.canAdd(video) { assetWriter.add(video) }
-            if assetWriter.canAdd(audio) { assetWriter.add(audio) }
-            writer = assetWriter
-            videoInput = video
-            audioInput = audio
-        } catch {
-            DispatchQueue.main.async { self.startCompletion?(error.localizedDescription); self.startCompletion = nil }
+    private func installVideoInput(position: AVCaptureDevice.Position) throws {
+        for input in session.inputs {
+            if let videoInput = input as? AVCaptureDeviceInput, videoInput.device.hasMediaType(.video) {
+                session.removeInput(videoInput)
+            }
+        }
+        let discovery = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInWideAngleCamera, .builtInDualCamera, .builtInDualWideCamera],
+            mediaType: .video, position: position)
+        guard let device = discovery.devices.first ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
+            throw NSError(domain: "LerizCamera", code: 1, userInfo: [NSLocalizedDescriptionKey: position == .back ? "No back camera was found." : "No front camera was found."])
+        }
+        let input = try AVCaptureDeviceInput(device: device)
+        guard session.canAddInput(input) else {
+            throw NSError(domain: "LerizCamera", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not connect the selected camera."])
+        }
+        session.addInput(input)
+        currentPosition = position
+    }
+
+    func switchCamera(to position: AVCaptureDevice.Position, completion: @escaping (String?) -> Void) {
+        guard !movieOutput.isRecording else {
+            DispatchQueue.main.async { completion("Stop recording before switching cameras.") }
+            return
+        }
+        sessionQueue.async {
+            do {
+                self.session.beginConfiguration()
+                try self.installVideoInput(position: position)
+                self.session.commitConfiguration()
+                self.currentPosition = position
+                DispatchQueue.main.async { completion(nil) }
+            } catch {
+                self.session.commitConfiguration()
+                DispatchQueue.main.async { completion(error.localizedDescription) }
+            }
+        }
+    }
+
+    func start(completion: @escaping (String?) -> Void) {
+        sessionQueue.async {
+            guard self.session.isRunning else {
+                DispatchQueue.main.async { completion("Camera is not ready yet. Try again.") }
+                return
+            }
+            guard !self.movieOutput.isRecording else { return }
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("Leriz-camera-\(UUID().uuidString).mov")
+            try? FileManager.default.removeItem(at: url)
+            self.outputURL = nil
+            self.failureMessage = nil
+            self.movieOutput.startRecording(to: url, recordingDelegate: self)
+            DispatchQueue.main.async { completion(nil) }
         }
     }
 
     func stop() {
-        guard !stopping else { return }
-        stopping = true
-        recorder.stopCapture { [weak self] error in
-            guard let self else { return }
-            self.queue.async {
-                guard let writer = self.writer else {
-                    DispatchQueue.main.async { self.failureMessage = "No video frames were recorded."; self.startCompletion?("No video frames were recorded."); self.startCompletion = nil }
-                    return
-                }
-                self.videoInput?.markAsFinished()
-                self.audioInput?.markAsFinished()
-                writer.finishWriting {
-                    DispatchQueue.main.async {
-                        if let error {
-                            self.failureMessage = error.localizedDescription
-                            self.startCompletion?(error.localizedDescription)
-                        } else if writer.status == .completed {
-                            self.outputURL = writer.outputURL
-                        } else {
-                            let message = writer.error?.localizedDescription ?? "Could not finish the video."
-                            self.failureMessage = message
-                            self.startCompletion?(message)
-                        }
-                        self.startCompletion = nil
-                    }
-                }
-            }
+        sessionQueue.async {
+            if self.movieOutput.isRecording { self.movieOutput.stopRecording() }
         }
     }
 
     func stopIfNeeded() {
-        if recorder.isRecording { stop() }
+        sessionQueue.async {
+            if self.movieOutput.isRecording { self.movieOutput.stopRecording() }
+            if self.session.isRunning { self.session.stopRunning() }
+        }
+    }
+
+    func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL,
+                    from connections: [AVCaptureConnection], error: Error?) {
+        DispatchQueue.main.async {
+            if let error {
+                self.failureMessage = "Could not finish recording: \(error.localizedDescription)"
+            } else {
+                self.outputURL = outputFileURL
+            }
+        }
     }
 }
