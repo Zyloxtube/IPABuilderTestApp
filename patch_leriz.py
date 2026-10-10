@@ -407,8 +407,8 @@ comments_type_body = comments_type_body.replace(
     1
 )
 comments_type_body = comments_type_body.replace(
-    "        .onAppear {\n            let saved = (try? JSONDecoder().decode([String].self, from: Data(likedCommentIDsJSON.utf8))) ?? []\n            likedComments = Set(saved)\n        }\n    }\n\n",
-    "        .onAppear {\n            let saved = (try? JSONDecoder().decode([String].self, from: Data(likedCommentIDsJSON.utf8))) ?? []\n            likedComments = Set(saved)\n        }\n    })\n    }\n\n",
+    "            .toolbar(.hidden, for: .navigationBar)\n        }\n        .alert",
+    "            .toolbar(.hidden, for: .navigationBar)\n        })\n        .alert",
     1
 )
 s = s[:comments_type_start] + comments_type_body + s[comments_type_end:]
