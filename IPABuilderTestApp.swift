@@ -253,7 +253,7 @@ struct FeedClip: Identifiable {
         return String(caption[caption.index(caption.startIndex, offsetBy: Self.metadataMarker.count)..<end])
     }
     var descriptionText: String {
-        guard caption.hasPrefix(Self.metadataMarker), let end = caption.firstIndex(of "\n") else { return caption }
+        guard caption.hasPrefix(Self.metadataMarker), let end = caption.firstIndex(of: "\n") else { return caption }
         return String(caption[caption.index(after: end)...])
     }
 
