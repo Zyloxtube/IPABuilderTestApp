@@ -1130,12 +1130,12 @@ struct CommentsSheet: View {
                         let screenHeight = UIScreen.main.bounds.height
                         let proposed = dragStartHeight - value.translation.height
                         isDraggingSheet = false
-                        if value.translation.height > 0 && proposed <= screenHeight * 0.53 {
+                        if value.translation.height > 0 && proposed <= screenHeight * 0.50 {
                             withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.92)) { onDismiss() }
                             return
                         }
-                        let stops = [screenHeight * 0.50, screenHeight * 0.75, screenHeight * 0.98]
-                        let target = stops.min(by: { abs($0 - proposed) < abs($1 - proposed) }) ?? screenHeight * 0.50
+                        // Two visible detents: half height and full height. A drag reaching 75% snaps open fully.
+                        let target = proposed >= screenHeight * 0.75 ? screenHeight * 0.98 : screenHeight * 0.50
                         withAnimation(.interactiveSpring(response: 0.30, dampingFraction: 0.90)) { sheetHeight = target }
                     })
                 .onAppear { Task { await loadComments(); await loadMyAvatar() } }
