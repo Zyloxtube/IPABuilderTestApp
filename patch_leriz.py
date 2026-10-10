@@ -136,8 +136,8 @@ r'''                            await MainActor.run { showDeleteError = "Profile
 )
 
 sub(
-r'''                                     _ = try await LerizAPI.saveProfile(displayName: name, username: username, bio: bio)
-                                     await MainActor.run { saving = false; saved = true }''',
+r'''                                    _ = try await LerizAPI.saveProfile(displayName: name, username: username, bio: bio)
+                                    await MainActor.run { saving = false; saved = true }''',
 r'''                                     let updated = try await LerizAPI.saveProfile(displayName: name, username: username, bio: bio)
                                      await MainActor.run {
                                          if let value = updated["username"] as? String, !value.isEmpty {
@@ -159,8 +159,8 @@ r'''                                     let updated = try await LerizAPI.savePr
 )
 
 sub(
-r'''                                     do { try await LerizAPI.follow(username: (profileUser["id"] as? String) ?? "") }
-                                     catch { await MainActor.run { profileLoadError = error.localizedDescription } }''',
+r'''                                    do { try await LerizAPI.follow(username: (profileUser["id"] as? String) ?? "") }
+                                    catch { await MainActor.run { profileLoadError = error.localizedDescription } }''',
 r'''                                     do {
                                          let username = profileUser["username"] as? String ?? clip?.handle.replacingOccurrences(of: "@", with: "") ?? ""
                                          let result = try await LerizAPI.follow(username: username)
