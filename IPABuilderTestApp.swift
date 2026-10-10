@@ -181,10 +181,25 @@ struct LerizLaunchView: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
+        .task { await restoreExistingSession() }
         .onChange(of: authToken) { value in
             if value.isEmpty { enterApp = false; showWelcome = false; isSignUp = false; password = "" }
         }
         .preferredColorScheme(.dark)
+    }
+
+    @MainActor
+    private func restoreExistingSession() async {
+        guard !authToken.isEmpty else { return }
+        do {
+            let (_, _) = try await LerizAPI.request("api/me")
+            enterApp = true
+            showWelcome = false
+        } catch {
+            // Expired/revoked tokens should not trap the app on a loading screen.
+            authToken = ""
+            enterApp = false
+        }
     }
 
     private var authScreen: some View {
@@ -210,7 +225,9 @@ struct LerizLaunchView: View {
                     if isSignUp {
                         authField(title: "Username", placeholder: "Choose a username", text: $username, symbol: "person")
                     }
-                    authField(title: "Email", placeholder: "you@example.com", text: $email, symbol: "envelope", isEmail: true)
+                    if !isSignUp {
+                        authField(title: "Username", placeholder: "Your username", text: $email, symbol: "person")
+                    }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("PASSWORD").font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundStyle(.white.opacity(0.58))
                         HStack(spacing: 11) {
@@ -331,18 +348,16 @@ struct LerizLaunchView: View {
         if isSignUp {
             payload["username"] = username.trimmingCharacters(in: .whitespacesAndNewlines)
             payload["displayName"] = username.trimmingCharacters(in: .whitespacesAndNewlines)
-            payload["email"] = email.trimmingCharacters(in: .whitespacesAndNewlines)
             endpoint = "api/auth/register"
         } else {
-            payload["email"] = email.trimmingCharacters(in: .whitespacesAndNewlines)
+            payload["username"] = email.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "@"))
             endpoint = "api/auth/login"
         }
 
-        guard !payload["email", default: ""].isEmpty,
-              !password.isEmpty,
-              (!isSignUp || !payload["username", default: ""].isEmpty) else {
+        guard !password.isEmpty,
+              !payload["username", default: ""].isEmpty else {
             isLoading = false
-            authError = isSignUp ? "Enter a username, email, and password." : "Enter your email and password."
+            authError = isSignUp ? "Enter a username and password." : "Enter your username and password."
             return
         }
 
@@ -681,6 +696,13 @@ struct ClipPage: View {
                     .onChange(of: isActive) { active in
                         if active { player.play(); isPlaying = true } else { player.pause() }
                     }
+                    .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { notification in
+                        guard let ended = notification.object as? AVPlayerItem,
+                              ended === player.currentItem else { return }
+                        player.seek(to: .zero) { _ in
+                            if isActive && isPlaying { player.play() }
+                        }
+                    }
                     .onDisappear { player.pause() }
                     .overlay {
                         Button {
@@ -691,7 +713,13 @@ struct ClipPage: View {
                             }
                             withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) { isPlaying.toggle() }
                         } label: {
-                            Color.clear.contentShape(Rectangle())
+                            ZStack {
+                                Color.clear.contentShape(Rectangle())
+                                if !isPlaying {
+                                    Circle().fill(.black.opacity(0.55)).frame(width: 66, height: 66)
+                                        .overlay(Image(systemName: "play.fill").font(.system(size: 25, weight: .bold)).foregroundStyle(.white).offset(x: 2))
+                                }
+                            }
                         }
                         .buttonStyle(.plain)
                     }
@@ -1040,9 +1068,16 @@ struct CommentsSheet: View {
             do {
                 try await LerizAPI.postComment(videoID: videoID, text: displayedText, parentID: parentID)
                 await MainActor.run {
-                    posted.insert(displayedText, at: 0)
-                    commentIDs.insert(parentID == nil ? "local-\(UUID().uuidString)" : "reply:\(UUID().uuidString)", at: 0)
-                    commentAuthors.insert(currentUsername.isEmpty ? "user" : currentUsername, at: 0)
+                    let newID = parentID == nil ? "local-\(UUID().uuidString)" : "reply:\(UUID().uuidString)"
+                    let insertionIndex: Int
+                    if let parentID, let parentIndex = commentIDs.firstIndex(of: parentID) {
+                        insertionIndex = parentIndex + 1
+                    } else {
+                        insertionIndex = 0
+                    }
+                    posted.insert(displayedText, at: min(insertionIndex, posted.count))
+                    commentIDs.insert(newID, at: min(insertionIndex, commentIDs.count))
+                    commentAuthors.insert(currentUsername.isEmpty ? "user" : currentUsername, at: min(insertionIndex, commentAuthors.count))
                     comment = ""
                     replyToID = nil
                     replyToAuthor = ""
