@@ -1095,7 +1095,7 @@ struct PlayerSurface: UIViewRepresentable {
     func makeUIView(context: Context) -> PlayerView {
         let view = PlayerView()
         view.playerLayer.player = player
-        view.playerLayer.videoGravity = .resizeAspectFill
+        view.playerLayer.videoGravity = .resizeAspect
         return view
     }
     func updateUIView(_ uiView: PlayerView, context: Context) { uiView.playerLayer.player = player }
@@ -2575,8 +2575,8 @@ struct CreateVideoPage: View {
     @State private var recentThumbnail: UIImage?
     @State private var selectedFilter = "Original"
     private let cameraFilters: [(String, Color)] = [
-        ("Original", .clear), ("Vivid", .pink.opacity(0.20)), ("Warm", .orange.opacity(0.22)),
-        ("Cool", .cyan.opacity(0.20)), ("Mono", .white.opacity(0.22)), ("Dream", .purple.opacity(0.20))
+        ("None", .clear), ("Glasses", .cyan.opacity(0.25)), ("Cat", .pink.opacity(0.25)),
+        ("Crown", .yellow.opacity(0.25)), ("Dog", .orange.opacity(0.25)), ("Robot", .purple.opacity(0.25))
     ]
     @StateObject private var recorder = LoopCameraRecorder()
 
@@ -2593,11 +2593,8 @@ struct CreateVideoPage: View {
                 }.padding(.horizontal, 18).padding(.vertical, 12)
 
                 ZStack(alignment: .bottom) {
-                    CameraCapturePreview(session: recorder.session)
-                        .clipShape(Rectangle())
-                        .padding(.horizontal, 10)
-                    cameraFilters.first(where: { $0.0 == selectedFilter })?.1
-                        .allowsHitTesting(false)
+                    ARFaceFilterPreview(selectedFilter: selectedFilter)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
                         .padding(.horizontal, 10)
                     LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .center, endPoint: .bottom)
                         .frame(height: 130).clipShape(Rectangle())
@@ -2611,7 +2608,7 @@ struct CreateVideoPage: View {
                             Label("Recording ready · tap Next to edit", systemImage: "checkmark.circle.fill")
                                 .font(.caption.bold()).foregroundStyle(.green)
                         } else {
-                            Text("Record directly from the selected camera")
+                            Text("Choose a live AR face effect")
                                 .font(.caption2).foregroundStyle(.white.opacity(0.8))
                         }
                     }.padding(.bottom, 16)
@@ -2625,7 +2622,7 @@ struct CreateVideoPage: View {
                                     RoundedRectangle(cornerRadius: 10)
                                         .fill(LinearGradient(colors: [filter.1 == .clear ? Color.gray.opacity(0.35) : filter.1, .black], startPoint: .topLeading, endPoint: .bottomTrailing))
                                         .frame(width: 48, height: 42)
-                                        .overlay(Image(systemName: filter.0 == "Original" ? "camera" : filter.0 == "Mono" ? "circle.lefthalf.filled" : "camera.filters").font(.system(size: 17)).foregroundStyle(.white))
+                                        .overlay(Image(systemName: filter.0 == "None" ? "camera" : filter.0 == "Glasses" ? "eyeglasses" : filter.0 == "Cat" ? "cat" : filter.0 == "Crown" ? "crown" : filter.0 == "Dog" ? "pawprint.fill" : "face.smiling").font(.system(size: 17)).foregroundStyle(.white))
                                         .overlay(RoundedRectangle(cornerRadius: 10).stroke(selectedFilter == filter.0 ? Color.cyan : Color.white.opacity(0.12), lineWidth: selectedFilter == filter.0 ? 2 : 1))
                                     Text(filter.0).font(.system(size: 11, weight: selectedFilter == filter.0 ? .bold : .medium)).foregroundStyle(selectedFilter == filter.0 ? .cyan : .white)
                                 }
@@ -2966,10 +2963,6 @@ struct VideoEditorView: View {
                           item === previewPlayer.currentItem else { return }
                     previewPlayer.seek(to: .zero) { _ in previewPlayer.play() }
                 }
-            if selectedFilter != "Original" {
-                let tint: Color = selectedFilter == "Warm" ? .orange : selectedFilter == "Cool" ? .cyan : selectedFilter == "Vivid" ? .pink : selectedFilter == "Mono" ? .white : .purple
-                Rectangle().fill(tint.opacity(selectedFilter == "Mono" ? 0.16 : 0.10)).allowsHitTesting(false)
-            }
             if !text.isEmpty {
                 Text(text)
                     .font(.system(size: 28, weight: .black, design: .rounded))
@@ -3110,52 +3103,11 @@ struct VideoEditorView: View {
         let payload = "\u{001E}LERIZ_TITLE:" + cleanTitle + "\n" + cleanCaption
         Task {
             await ensureHashtagsExist(in: cleanCaption)
-            let filteredURL = await applySelectedFilter(to: url) ?? url
             if overlay.isEmpty {
-                await MainActor.run { onPost(payload, filteredURL) }
+                await MainActor.run { onPost(payload, url) }
             } else {
-                let rendered = await renderTextIntoVideo(text: overlay, sourceURL: filteredURL, color: UIColor(textColor), opacity: opacity, border: useBorder, gradient: useGradient)
-                await MainActor.run { onPost(payload, rendered ?? filteredURL) }
-            }
-        }
-    }
-
-    private func applySelectedFilter(to sourceURL: URL) async -> URL? {
-        guard selectedFilter != "Original" else { return sourceURL }
-        let asset = AVURLAsset(url: sourceURL)
-        let composition = AVVideoComposition(asset: asset) { request in
-            let source = request.sourceImage
-            let image: CIImage
-            switch self.selectedFilter {
-            case "Vivid":
-                image = source.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.4, kCIInputContrastKey: 1.12, kCIInputBrightnessKey: 0.025])
-            case "Warm":
-                image = source.applyingFilter("CIPhotoEffectInstant")
-            case "Cool":
-                image = source.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.15, kCIInputContrastKey: 1.08, kCIInputBrightnessKey: 0.0])
-                    .applyingFilter("CIColorMatrix", parameters: [
-                        "inputRVector": CIVector(x: 0.94, y: 0, z: 0, w: 0),
-                        "inputGVector": CIVector(x: 0, y: 1.0, z: 0, w: 0),
-                        "inputBVector": CIVector(x: 0, y: 0, z: 1.12, w: 0)
-                    ])
-            case "Mono":
-                image = source.applyingFilter("CIPhotoEffectMono")
-            case "Dream":
-                image = source.applyingFilter("CIPhotoEffectFade")
-            default:
-                image = source
-            }
-            request.finish(with: image.cropped(to: source.extent), context: nil)
-        }
-        let output = FileManager.default.temporaryDirectory.appendingPathComponent("Leriz-filtered-\(UUID().uuidString).mp4")
-        try? FileManager.default.removeItem(at: output)
-        guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else { return nil }
-        exporter.outputURL = output
-        exporter.outputFileType = .mp4
-        exporter.videoComposition = composition
-        return await withCheckedContinuation { continuation in
-            exporter.exportAsynchronously {
-                continuation.resume(returning: exporter.status == .completed ? output : nil)
+                let rendered = await renderTextIntoVideo(text: overlay, sourceURL: url, color: UIColor(textColor), opacity: opacity, border: useBorder, gradient: useGradient)
+                await MainActor.run { onPost(payload, rendered ?? url) }
             }
         }
     }
@@ -3397,6 +3349,155 @@ struct SongGridVideoTile: View {
     private func seekPreview() {
         player.seek(to: CMTime(seconds: Double(frameIndex) / 3.0, preferredTimescale: 600),
                     toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+}
+
+struct ARFaceFilterPreview: UIViewRepresentable {
+    let selectedFilter: String
+
+    func makeCoordinator() -> Coordinator { Coordinator(selectedFilter: selectedFilter) }
+
+    func makeUIView(context: Context) -> ARSCNView {
+        let view = ARSCNView(frame: .zero)
+        view.backgroundColor = .black
+        view.automaticallyUpdatesLighting = true
+        view.delegate = context.coordinator
+        view.scene = SCNScene()
+        guard ARFaceTrackingConfiguration.isSupported else {
+            context.coordinator.unsupported = true
+            return view
+        }
+        let configuration = ARFaceTrackingConfiguration()
+        configuration.isLightEstimationEnabled = true
+        view.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+        return view
+    }
+
+    func updateUIView(_ view: ARSCNView, context: Context) {
+        context.coordinator.selectedFilter = selectedFilter
+        context.coordinator.refreshNodes()
+        if ARFaceTrackingConfiguration.isSupported, view.session.currentFrame == nil {
+            let configuration = ARFaceTrackingConfiguration()
+            configuration.isLightEstimationEnabled = true
+            view.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+        }
+    }
+
+    static func dismantleUIView(_ view: ARSCNView, coordinator: Coordinator) {
+        view.session.pause()
+        view.delegate = nil
+    }
+
+    final class Coordinator: NSObject, ARSCNViewDelegate {
+        var selectedFilter: String
+        var unsupported = false
+        private weak var faceNode: SCNNode?
+        private var attachedFilterNodes: [SCNNode] = []
+
+        init(selectedFilter: String) { self.selectedFilter = selectedFilter }
+
+        func renderer(_ renderer: SCNSceneRenderer, nodeFor anchor: ARAnchor) -> SCNNode? {
+            guard anchor is ARFaceAnchor else { return nil }
+            let root = SCNNode()
+            faceNode = root
+            refreshNodes()
+            return root
+        }
+
+        func renderer(_ renderer: SCNSceneRenderer, didUpdate node: SCNNode, for anchor: ARAnchor) {
+            guard let face = anchor as? ARFaceAnchor else { return }
+            DispatchQueue.main.async {
+                self.faceNode = node
+                self.updateExpression(face)
+            }
+        }
+
+        func refreshNodes() {
+            guard let faceNode else { return }
+            attachedFilterNodes.forEach { $0.removeFromParentNode() }
+            attachedFilterNodes.removeAll()
+            guard selectedFilter != "None" else { return }
+
+            func attach(_ node: SCNNode, position: SCNVector3) {
+                node.position = position
+                faceNode.addChildNode(node)
+                attachedFilterNodes.append(node)
+            }
+            func material(_ color: UIColor, metallic: CGFloat = 0) -> SCNMaterial {
+                let m = SCNMaterial()
+                m.diffuse.contents = color
+                m.metalness.contents = metallic
+                m.lightingModel = .physicallyBased
+                return m
+            }
+            switch selectedFilter {
+            case "Glasses":
+                let glass = material(UIColor.systemCyan.withAlphaComponent(0.72), metallic: 0.35)
+                let frame = material(UIColor.black, metallic: 0.15)
+                for x: Float in [-0.035, 0.035] {
+                    let lens = SCNNode(geometry: SCNTorus(ringRadius: 0.020, pipeRadius: 0.003))
+                    lens.geometry?.firstMaterial = frame
+                    lens.scale = SCNVector3(1.0, 0.78, 1.0)
+                    attach(lens, position: SCNVector3(x, 0.025, 0.085))
+                    let tint = SCNNode(geometry: SCNPlane(width: 0.035, height: 0.027))
+                    tint.geometry?.firstMaterial = glass
+                    attach(tint, position: SCNVector3(x, 0.025, 0.084))
+                }
+                let bridge = SCNNode(geometry: SCNBox(width: 0.018, height: 0.003, length: 0.003, chamferRadius: 0.002))
+                bridge.geometry?.firstMaterial = frame
+                attach(bridge, position: SCNVector3(0, 0.025, 0.087))
+            case "Cat":
+                for x: Float in [-0.065, 0.065] {
+                    let ear = SCNNode(geometry: SCNCone(topRadius: 0, bottomRadius: 0.024, height: 0.065))
+                    ear.geometry?.firstMaterial = material(UIColor.systemPink)
+                    ear.eulerAngles.z = x < 0 ? -0.22 : 0.22
+                    attach(ear, position: SCNVector3(x, 0.095, 0.005))
+                }
+                let nose = SCNNode(geometry: SCNSphere(radius: 0.012))
+                nose.geometry?.firstMaterial = material(UIColor.systemPink)
+                nose.scale = SCNVector3(1.0, 0.7, 0.65)
+                attach(nose, position: SCNVector3(0, -0.025, 0.095))
+            case "Crown":
+                let crown = SCNNode(geometry: SCNCone(topRadius: 0.004, bottomRadius: 0.055, height: 0.075))
+                crown.geometry?.firstMaterial = material(UIColor.systemYellow, metallic: 0.7)
+                attach(crown, position: SCNVector3(0, 0.13, 0.005))
+                for x: Float in [-0.035, 0, 0.035] {
+                    let gem = SCNNode(geometry: SCNSphere(radius: 0.008))
+                    gem.geometry?.firstMaterial = material(UIColor.systemRed, metallic: 0.3)
+                    attach(gem, position: SCNVector3(x, 0.158, 0.009))
+                }
+            case "Dog":
+                for x: Float in [-0.075, 0.075] {
+                    let ear = SCNNode(geometry: SCNSphere(radius: 0.025))
+                    ear.geometry?.firstMaterial = material(UIColor.brown)
+                    ear.scale = SCNVector3(0.8, 1.7, 0.55)
+                    attach(ear, position: SCNVector3(x, 0.055, 0.0))
+                }
+                let nose = SCNNode(geometry: SCNSphere(radius: 0.014))
+                nose.geometry?.firstMaterial = material(UIColor.black)
+                attach(nose, position: SCNVector3(0, -0.028, 0.098))
+            case "Robot":
+                let visor = SCNNode(geometry: SCNBox(width: 0.105, height: 0.045, length: 0.018, chamferRadius: 0.012))
+                visor.geometry?.firstMaterial = material(UIColor.systemTeal, metallic: 0.65)
+                attach(visor, position: SCNVector3(0, 0.025, 0.07))
+                for x: Float in [-0.028, 0.028] {
+                    let eye = SCNNode(geometry: SCNSphere(radius: 0.008))
+                    eye.geometry?.firstMaterial = material(UIColor.white)
+                    attach(eye, position: SCNVector3(x, 0.025, 0.083))
+                }
+            default: break
+            }
+        }
+
+        private func updateExpression(_ face: ARFaceAnchor) {
+            guard selectedFilter == "Cat" || selectedFilter == "Dog" else { return }
+            let open = CGFloat(face.blendShapes[.jawOpen]?.doubleValue ?? 0)
+            for node in attachedFilterNodes where node.geometry is SCNSphere {
+                if node.position.y < 0 {
+                    node.scale.y = max(0.45, 0.7 + Float(open) * 0.6)
+                }
+            }
+        }
     }
 }
 
