@@ -8,6 +8,23 @@ import ReplayKit
 import AVFoundation
 import CoreMedia
 
+struct LerizServerConfiguration: Decodable {
+    let serverName: String
+    let baseURL: String
+
+    static let current: LerizServerConfiguration = {
+        guard
+            let url = Bundle.main.url(forResource: "server", withExtension: "json"),
+            let data = try? Data(contentsOf: url),
+            let config = try? JSONDecoder().decode(LerizServerConfiguration.self, from: data),
+            URL(string: config.baseURL) != nil
+        else {
+            return LerizServerConfiguration(serverName: "Leriz Server", baseURL: "https://subhyaloid-kallie-bihourly.ngrok-free.dev")
+        }
+        return config
+    }()
+}
+
 @main
 struct LerizApp: App {
     var body: some Scene {
@@ -49,6 +66,8 @@ struct LerizLaunchView: View {
     @State private var isLoading = false
     @State private var showWelcome = false
     @State private var enterApp = false
+    @State private var authError = ""
+    @AppStorage("lerizAuthToken") private var authToken = ""
 
     var body: some View {
         ZStack {
@@ -117,9 +136,19 @@ struct LerizLaunchView: View {
                         .background(LinearGradient(colors: [.cyan.opacity(0.95), .purple, .pink.opacity(0.95)], startPoint: .leading, endPoint: .trailing), in: RoundedRectangle(cornerRadius: 16))
                     }
                     .disabled(isLoading)
-                    Text("DEMO MODE · No account is created and no data is sent.")
-                        .font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.42))
-                        .multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(.top, 1)
+                    if !authError.isEmpty {
+                        Text(authError)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.red.opacity(0.95))
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                    }
+                    Text("SERVER · \\(LerizServerConfiguration.current.serverName)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.48))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 1)
                 }
                 .padding(22)
                 .background(.ultraThinMaterial.opacity(0.45), in: RoundedRectangle(cornerRadius: 26))
@@ -187,9 +216,61 @@ struct LerizLaunchView: View {
 
     private func startDemo() {
         guard !isLoading else { return }
+        authError = ""
         isLoading = true
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        Task { await authenticateWithServer() }
+    }
+
+    @MainActor
+    private func authenticateWithServer() async {
+        let config = LerizServerConfiguration.current
+        guard let baseURL = URL(string: config.baseURL) else {
+            isLoading = false
+            authError = "The server URL in server.json is invalid."
+            return
+        }
+
+        var payload: [String: String] = ["password": password]
+        let endpoint: String
+        if isSignUp {
+            payload["username"] = username.trimmingCharacters(in: .whitespacesAndNewlines)
+            payload["displayName"] = username.trimmingCharacters(in: .whitespacesAndNewlines)
+            payload["email"] = email.trimmingCharacters(in: .whitespacesAndNewlines)
+            endpoint = "api/auth/register"
+        } else {
+            payload["email"] = email.trimmingCharacters(in: .whitespacesAndNewlines)
+            endpoint = "api/auth/login"
+        }
+
+        guard !payload["email", default: ""].isEmpty,
+              !password.isEmpty,
+              (!isSignUp || !payload["username", default: ""].isEmpty) else {
+            isLoading = false
+            authError = isSignUp ? "Enter a username, email, and password." : "Enter your email and password."
+            return
+        }
+
+        let url = baseURL.appendingPathComponent(endpoint)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("true", forHTTPHeaderField: "ngrok-skip-browser-warning")
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw NSError(domain: "LerizServer", code: 1, userInfo: [NSLocalizedDescriptionKey: "The server returned an invalid response."])
+            }
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            guard (200...299).contains(http.statusCode), json["ok"] as? Bool == true,
+                  let token = json["token"] as? String, !token.isEmpty else {
+                let message = json["error"] as? String ?? json["message"] as? String ?? "Request failed (HTTP \\(http.statusCode)). Check your details and try again."
+                isLoading = false
+                authError = message
+                return
+            }
+
+            authToken = token
             withAnimation(.easeInOut(duration: 0.65)) {
                 isLoading = false
                 showWelcome = true
@@ -198,6 +279,9 @@ struct LerizLaunchView: View {
             withAnimation(.easeInOut(duration: 1.0)) {
                 enterApp = true
             }
+        } catch {
+            isLoading = false
+            authError = "Cannot connect to \\(config.serverName). Check that the backend and ngrok are running. \\(error.localizedDescription)"
         }
     }
 }
