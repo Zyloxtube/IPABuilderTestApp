@@ -529,7 +529,7 @@ struct LoopFeedView: View {
         }
         .task { await loadFeed() }
         .onChange(of: selectedTab) { value in Task { await loadFeed(mode: value == "Following" ? "following" : "forYou") } }
-        .sheet(isPresented: $showComments) { if !clips.isEmpty { CommentsSheet(clip: clips[selectedClip]) } }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        .fullScreenCover(isPresented: $showComments) { if !clips.isEmpty { CommentsSheet(clip: clips[selectedClip]) } }
         .sheet(isPresented: $showSearch) {
             SearchSheet(clips: clips) { chosenClip in
                 if let index = clips.firstIndex(where: { $0.id == chosenClip.id }) {
@@ -968,11 +968,54 @@ struct CommentsSheet: View {
     @State private var replyToAuthor = ""
     @State private var previewPlayer = AVPlayer()
     @FocusState private var commentFieldFocused: Bool
+    @GestureState private var dragTranslation: CGFloat = 0
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                HStack(spacing: 11) {
+                ZStack {
+                    Color.black
+                    PlayerSurface(player: previewPlayer)
+                        .frame(width: min(UIScreen.main.bounds.width, UIScreen.main.bounds.height * 0.5 * 9.0 / 16.0), height: UIScreen.main.bounds.height * 0.5)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.10), lineWidth: 1))
+                    VStack {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(clip.creator).font(.system(size: 13, weight: .bold)).lineLimit(1)
+                                Text("Comments").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.68))
+                            }
+                            Spacer()
+                            Button { dismiss() } label: {
+                                Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                                    .padding(10).background(Color.black.opacity(0.55), in: Circle())
+                            }.buttonStyle(.plain)
+                        }
+                        Spacer()
+                        Capsule().fill(.white.opacity(0.55)).frame(width: 38, height: 4).padding(.bottom, 8)
+                    }.padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 2)
+                }
+                .frame(height: UIScreen.main.bounds.height * 0.5)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 8).updating($dragTranslation) { value, state, _ in
+                    if value.translation.height > 0 { state = value.translation.height }
+                }.onEnded { value in
+                    if value.translation.height > UIScreen.main.bounds.height * 0.20 {
+                        dismiss()
+                    }
+                })
+                .onAppear {
+                    if let url = URL(string: clip.videoURL) {
+                        previewPlayer.replaceCurrentItem(with: AVPlayerItem(url: url))
+                        previewPlayer.isMuted = true
+                        previewPlayer.play()
+                    }
+                    Task { await loadComments() }
+                }
+                .onDisappear { previewPlayer.pause() }
+
+                Divider().overlay(Color.white.opacity(0.08))
                     PlayerSurface(player: previewPlayer)
                         .frame(width: 92, height: 56)
                         .clipShape(RoundedRectangle(cornerRadius: 9))
@@ -1185,6 +1228,9 @@ struct CommentsSheet: View {
             Text("This comment and its replies will be deleted.")
         }
         .preferredColorScheme(.dark)
+        .offset(y: max(0, dragTranslation))
+        .background(Color.black.ignoresSafeArea())
+        .ignoresSafeArea()
         .onAppear {
             let saved = (try? JSONDecoder().decode([String].self, from: Data(likedCommentIDsJSON.utf8))) ?? []
             likedComments = Set(saved)
