@@ -1840,7 +1840,7 @@ struct VideoEditorView: View {
         exporter.outputURL = output
         exporter.outputFileType = .mp4
         exporter.videoComposition = instruction
-        await withCheckedContinuation { continuation in
+        return await withCheckedContinuation { continuation in
             exporter.exportAsynchronously {
                 continuation.resume(returning: exporter.status == .completed ? output : nil)
             }
