@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -54,3 +54,11 @@ jobs:
           path: Leriz-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish direct IPA download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: leriz-build-${{ github.run_number }}
+          name: Leriz iOS build ${{ github.run_number }}
+          files: Leriz-unsigned.ipa
+          generate_release_notes: false
