@@ -937,6 +937,24 @@ struct ClipPage: View {
                     .foregroundStyle(.white)
                     Spacer(minLength: 0)
                     VStack(spacing: 20) {
+                        // Creator poster/profile image with the follow (+) badge, directly above Like.
+                        Button(action: onProfile) {
+                            LerizAvatarView(urlString: clip.avatarURL, size: 44, fallbackColor: clip.accent)
+                                .overlay(alignment: .bottom) {
+                                    if clip.handle.trimmingCharacters(in: CharacterSet(charactersIn: "@")).caseInsensitiveCompare(currentUsername) != .orderedSame && !isFollowing {
+                                        Image(systemName: "plus")
+                                            .font(.system(size: 10, weight: .black))
+                                            .foregroundStyle(.white)
+                                            .frame(width: 19, height: 19)
+                                            .background(Color.cyan, in: Circle())
+                                            .overlay(Circle().stroke(Color.black, lineWidth: 1.5))
+                                            .offset(y: 8)
+                                    }
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.bottom, 5)
+                        .accessibilityLabel("Open creator profile")
                         actionButton(isLiked ? "heart.fill" : "heart", value: clip.likes, color: .white, gradient: isLiked, action: onLike)
                         actionButton("text.bubble", value: clip.comments, color: .white, action: onComments)
                         actionButton(isSaved ? "bookmark.fill" : "bookmark", value: isSaved ? "Saved" : "Save", color: isSaved ? Color(red: 1, green: 0.78, blue: 0.16) : .white, action: onSave)
