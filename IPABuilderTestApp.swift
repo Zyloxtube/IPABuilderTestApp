@@ -398,11 +398,21 @@ struct ClipPage: View {
                         if isActive { player.play() }
                     }
                     .onChange(of: isActive) { active in
-                        if active { player.play(); isPlaying = true } else { player.pause() }                    }
+                        if active { player.play(); isPlaying = true } else { player.pause() }
+                    }
                     .onDisappear { player.pause() }
-                    .onTapGesture {
-                        if isPlaying { player.pause() } else { player.play() }
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) { isPlaying.toggle() }
+                    .overlay {
+                        Button {
+                            if isPlaying {
+                                player.pause()
+                            } else {
+                                player.play()
+                            }
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) { isPlaying.toggle() }
+                        } label: {
+                            Color.clear.contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
             }
             LinearGradient(colors: [.black.opacity(0.22), .clear, .clear, .black.opacity(0.88)], startPoint: .top, endPoint: .bottom)
@@ -700,6 +710,12 @@ struct SearchSheet: View {
         clips.sorted { $0.views > $1.views }
     }
 
+    private func gridOrder(_ ranked: [FeedClip]) -> [FeedClip] {
+        stride(from: 0, to: ranked.count, by: 3).flatMap { start in
+            Array(ranked[start..<min(start + 3, ranked.count)].reversed())
+        }
+    }
+
     private let columns = [GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9)]
 
     var body: some View {
@@ -732,7 +748,7 @@ struct SearchSheet: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 35)
                         } else {
                             LazyVGrid(columns: columns, spacing: 12) {
-                                ForEach(matchingClips.sorted { $0.views > $1.views }) { clip in
+                                ForEach(gridOrder(matchingClips.sorted { $0.views > $1.views })) { clip in
                                     Button {
                                         onSelectClip(clip)
                                         dismiss()
@@ -772,7 +788,7 @@ struct SearchSheet: View {
 
                         Text("POPULAR VIDEOS").font(.caption.bold()).foregroundStyle(.secondary).tracking(1.5).padding(.top, 4)
                         LazyVGrid(columns: columns, spacing: 12) {
-                            ForEach(popularClips) { clip in
+                            ForEach(gridOrder(popularClips)) { clip in
                                 Button {
                                     onSelectClip(clip)
                                     dismiss()
@@ -804,48 +820,113 @@ struct TrendingVideosPage: View {
     @Environment(\.dismiss) private var dismiss
     let clips: [FeedClip]
     let onSelectClip: (FeedClip) -> Void
+    @State private var selectedTrend: String? = nil
+    private let trends = ["#loopchallenge", "#travelcore", "#oddlysatisfying"]
+    private let columns = [GridItem(.flexible(), spacing: 2), GridItem(.flexible(), spacing: 2), GridItem(.flexible(), spacing: 2)]
 
-    private var rankedClips: [FeedClip] { clips.sorted { $0.views > $1.views } }
+    private var trendClips: [FeedClip] {
+        guard let selectedTrend else { return clips.sorted { $0.views > $1.views } }
+        let matches = clips.filter { $0.tags.localizedCaseInsensitiveContains(selectedTrend) }
+        return (matches.isEmpty ? clips : matches).sorted { $0.views > $1.views }
+    }
+
+    private var gridClips: [FeedClip] {
+        let sorted = trendClips
+        return stride(from: 0, to: sorted.count, by: 3).flatMap { start in
+            Array(sorted[start..<min(start + 3, sorted.count)].reversed())
+        }
+    }
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 13) {
-                ForEach(Array(rankedClips.enumerated()), id: \.element.id) { index, clip in
-                    Button {
-                        onSelectClip(clip)
-                        dismiss()
-                    } label: {
-                        HStack(spacing: 13) {
-                            Text("#\(index + 1)")
-                                .font(.system(size: 14, weight: .black, design: .rounded))
-                                .foregroundStyle(index == 0 ? .yellow : .secondary)
-                                .frame(width: 27)
-                            VideoPreviewTile(clip: clip)
-                                .frame(width: 108)
-                            VStack(alignment: .leading, spacing: 7) {
-                                Text(clip.caption).font(.system(size: 14, weight: .bold)).foregroundStyle(.white).lineLimit(3)
-                                Text(clip.creator + " · " + clip.handle).font(.caption).foregroundStyle(.white.opacity(0.65))
-                                Label("\(clip.views.formatted()) views", systemImage: "play.fill")
-                                    .font(.system(size: 12, weight: .bold)).foregroundStyle(.cyan)
-                                Text(clip.tags).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                            Spacer(minLength: 0)
+            if let selectedTrend {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.system(size: 25, weight: .bold))
+                            .foregroundStyle(LinearGradient(colors: [.pink, .orange], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 58, height: 58)
+                            .background(Color.white.opacity(0.08))
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(selectedTrend).font(.system(size: 21, weight: .black))
+                            Text("Trending videos · ranked by views").font(.caption).foregroundStyle(.secondary)
                         }
-                        .padding(10)
-                        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 15))
+                        Spacer()
                     }
-                    .buttonStyle(.plain)
+                    Text("\(trendClips.count) videos").font(.caption.bold()).foregroundStyle(.secondary)
                 }
+                .padding(12)
+                LazyVGrid(columns: columns, spacing: 2) {
+                    ForEach(gridClips) { clip in
+                        Button {
+                            onSelectClip(clip)
+                            dismiss()
+                        } label: {
+                            VideoPreviewTile(clip: clip)
+                                .frame(maxWidth: .infinity)
+                                .aspectRatio(9.0 / 16.0, contentMode: .fit)
+                                .clipped()
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 2)
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("TOP TRENDS").font(.caption.bold()).tracking(1.5).foregroundStyle(.secondary)
+                    ForEach(Array(trends.enumerated()), id: \.element) { index, trend in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) { selectedTrend = trend }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Text("#\(index + 1)").font(.system(size: 14, weight: .black)).foregroundStyle(index == 0 ? .yellow : .secondary).frame(width: 28)
+                                Image(systemName: "chart.line.uptrend.xyaxis")
+                                    .font(.system(size: 21, weight: .bold)).foregroundStyle(.pink)
+                                    .frame(width: 48, height: 58).background(Color.white.opacity(0.06))
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(trend).font(.system(size: 16, weight: .bold)).foregroundStyle(.white)
+                                    Text("Tap to explore videos").font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                            }
+                            .padding(10)
+                            .background(Color.white.opacity(0.04))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Text("POPULAR VIDEOS").font(.caption.bold()).tracking(1.5).foregroundStyle(.secondary).padding(.top, 10)
+                    LazyVGrid(columns: columns, spacing: 2) {
+                        ForEach(gridClips) { clip in
+                            Button {
+                                onSelectClip(clip)
+                                dismiss()
+                            } label: {
+                                VideoPreviewTile(clip: clip)
+                                    .frame(maxWidth: .infinity)
+                                    .aspectRatio(9.0 / 16.0, contentMode: .fit)
+                                    .clipped()
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(12)
             }
-            .padding(14)
         }
         .background(Color.black.ignoresSafeArea())
-        .navigationTitle("Trending now")
+        .navigationTitle(selectedTrend == nil ? "Trending now" : "Trend")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            if selectedTrend != nil {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { selectedTrend = nil } label: { Image(systemName: "chevron.left").fontWeight(.semibold) }
+                }
+            }
+        }
     }
 }
-
 struct VideoPreviewTile: View {
     let clip: FeedClip
     @State private var player = AVPlayer()
@@ -853,42 +934,24 @@ struct VideoPreviewTile: View {
     private let frameCount = 6
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            PlayerSurface(player: player)
-                .frame(maxWidth: .infinity)
-                .aspectRatio(9.0 / 16.0, contentMode: .fit)
-                .clipped()
-                .background(clip.accent.gradient)
-            LinearGradient(colors: [.clear, .black.opacity(0.58)], startPoint: .center, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 4) {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 12, weight: .black))
-                    .foregroundStyle(.white)
-                    .padding(7)
-                    .background(.black.opacity(0.48), in: Circle())
-                Text(clip.views.formatted())
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white)
+        PlayerSurface(player: player)
+            .frame(maxWidth: .infinity)
+            .aspectRatio(9.0 / 16.0, contentMode: .fit)
+            .background(clip.accent.gradient)
+            .clipped()
+            .onAppear {
+                guard let url = URL(string: clip.videoURL) else { return }
+                player.replaceCurrentItem(with: AVPlayerItem(url: url))
+                player.isMuted = true
+                player.pause()
+                seekToPreviewFrame()
             }
-            .padding(7)
-        }
-        .aspectRatio(9.0 / 16.0, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.08), lineWidth: 1))
-        .onAppear {
-            guard let url = URL(string: clip.videoURL) else { return }
-            player.replaceCurrentItem(with: AVPlayerItem(url: url))
-            player.isMuted = true
-            player.pause()
-            seekToPreviewFrame()
-        }
-        .onReceive(Timer.publish(every: 1.0 / 3.0, on: .main, in: .common).autoconnect()) { _ in
-            guard player.currentItem != nil else { return }
-            frameIndex = (frameIndex + 1) % frameCount
-            seekToPreviewFrame()
-        }
-        .onDisappear { player.pause() }
-        .allowsHitTesting(false)
+            .onReceive(Timer.publish(every: 1.0 / 3.0, on: .main, in: .common).autoconnect()) { _ in
+                guard player.currentItem != nil else { return }
+                frameIndex = (frameIndex + 1) % frameCount
+                seekToPreviewFrame()
+            }
+            .onDisappear { player.pause() }
     }
 
     private func seekToPreviewFrame() {
@@ -896,7 +959,6 @@ struct VideoPreviewTile: View {
         player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 }
-
 struct ProfileSheet: View {
     @Environment(\.dismiss) private var dismiss
     var clip: FeedClip? = nil
@@ -1048,10 +1110,10 @@ struct CreateVideoPage: View {
 
                 ZStack(alignment: .bottom) {
                     CameraCapturePreview(session: recorder.session)
-                        .clipShape(RoundedRectangle(cornerRadius: 22))
+                        .clipShape(Rectangle())
                         .padding(.horizontal, 10)
                     LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .center, endPoint: .bottom)
-                        .frame(height: 130).clipShape(RoundedRectangle(cornerRadius: 22))
+                        .frame(height: 130).clipShape(Rectangle())
                         .padding(.horizontal, 10).allowsHitTesting(false)
                     VStack(spacing: 8) {
                         if let permissionMessage {
@@ -1173,7 +1235,7 @@ struct VideoEditorView: View {
                             .gesture(DragGesture().onChanged { textOffset = $0.translation })
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .clipShape(Rectangle())
                 .padding(.horizontal, 12)
                 TextField("Write a caption…", text: $text, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
@@ -1246,7 +1308,23 @@ struct SongDetailSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 3) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Rectangle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            Image(systemName: "opticaldisc").font(.system(size: 32, weight: .regular)).foregroundStyle(.white)
+                        }
+                        .frame(width: 64, height: 64)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(clip.song).font(.system(size: 17, weight: .bold)).lineLimit(2)
+                            Text("Videos using this sound").font(.caption).foregroundStyle(.secondary)
+                            Text("\(songClips.count) videos · sorted by views").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+                .padding(10)
+                LazyVGrid(columns: columns, spacing: 2) {
                     ForEach(gridClips) { item in
                         Button {
                             onSelectClip(item)
@@ -1265,8 +1343,8 @@ struct SongDetailSheet: View {
                         }
                     }
                 }
-                .padding(.horizontal, 3)
-                .padding(.top, 3)
+                .padding(.horizontal, 2)
+                .padding(.bottom, 2)
             }
             .background(Color.black)
             .navigationTitle(clip.song)
@@ -1375,22 +1453,20 @@ final class LoopCameraRecorder: NSObject, ObservableObject, AVCaptureFileOutputR
     }
 
     private func installVideoInput(position: AVCaptureDevice.Position) throws {
-        for input in session.inputs {
-            if let videoInput = input as? AVCaptureDeviceInput, videoInput.device.hasMediaType(.video) {
-                session.removeInput(videoInput)
-            }
-        }
         let discovery = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .builtInDualCamera, .builtInDualWideCamera],
+            deviceTypes: [.builtInWideAngleCamera, .builtInDualCamera, .builtInDualWideCamera, .builtInTripleCamera],
             mediaType: .video, position: position)
         guard let device = discovery.devices.first ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
             throw NSError(domain: "LerizCamera", code: 1, userInfo: [NSLocalizedDescriptionKey: position == .back ? "No back camera was found." : "No front camera was found."])
         }
-        let input = try AVCaptureDeviceInput(device: device)
-        guard session.canAddInput(input) else {
-            throw NSError(domain: "LerizCamera", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not connect the selected camera."])
+        let newInput = try AVCaptureDeviceInput(device: device)
+        let previousInputs = session.inputs.compactMap { $0 as? AVCaptureDeviceInput }.filter { $0.device.hasMediaType(.video) }
+        previousInputs.forEach { session.removeInput($0) }
+        guard session.canAddInput(newInput) else {
+            previousInputs.forEach { if session.canAddInput($0) { session.addInput($0) } }
+            throw NSError(domain: "LerizCamera", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not connect the selected camera. The previous camera has been restored."])
         }
-        session.addInput(input)
+        session.addInput(newInput)
         currentPosition = position
     }
 
@@ -1401,13 +1477,17 @@ final class LoopCameraRecorder: NSObject, ObservableObject, AVCaptureFileOutputR
         }
         sessionQueue.async {
             do {
+                let wasRunning = self.session.isRunning
+                if wasRunning { self.session.stopRunning() }
                 self.session.beginConfiguration()
                 try self.installVideoInput(position: position)
                 self.session.commitConfiguration()
+                if wasRunning { self.session.startRunning() }
                 self.currentPosition = position
                 DispatchQueue.main.async { completion(nil) }
             } catch {
                 self.session.commitConfiguration()
+                if !self.session.isRunning { self.session.startRunning() }
                 DispatchQueue.main.async { completion(error.localizedDescription) }
             }
         }
