@@ -392,6 +392,15 @@ r'''            self.movieOutput.startRecording(to: url, recordingDelegate: self
 "recording start remains on capture queue"
 )
 
+# Anchor the half-height comments sheet to the bottom edge instead of centering it.
+sub(
+r'''        .overlay {
+            if showComments && !clips.isEmpty {''',
+r'''        .overlay(alignment: .bottom) {
+            if showComments && !clips.isEmpty {''',
+"bottom-anchor comments sheet"
+)
+
 # Keep the CommentsSheet body type-checkable and use its supplied dismiss callback.
 comments_type_start = s.index("struct CommentsSheet: View {")
 comments_type_end = s.index("    private func toggleCommentLike", comments_type_start)
