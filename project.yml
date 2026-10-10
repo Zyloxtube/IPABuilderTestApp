@@ -9,6 +9,8 @@ targets:
     platform: iOS
     sources:
       - IPABuilderTestApp.swift
+      - path: server.json
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zyloxtube.leriz
