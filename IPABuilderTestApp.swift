@@ -2309,7 +2309,15 @@ struct AccountsListSheet: View {
         }
         let safe = cleanUsername.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? cleanUsername
         do {
-            let (data, _) = try await LerizAPI.request("api/users/\(safe)/\(kind)")
+            // Profile lookup accepts a username; followers/following endpoints require the user's UUID.
+            let (profileData, _) = try await LerizAPI.request("api/users/\(safe)")
+            let profileJSON = (try? JSONSerialization.jsonObject(with: profileData)) as? [String: Any] ?? [:]
+            let profile = profileJSON["user"] as? [String: Any] ?? profileJSON
+            guard let userID = profile["id"] as? String, !userID.isEmpty else {
+                throw NSError(domain: "LerizAPI", code: 404, userInfo: [NSLocalizedDescriptionKey: "Could not resolve this account's ID."])
+            }
+            let safeID = userID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userID
+            let (data, _) = try await LerizAPI.request("api/users/\(safeID)/\(kind)")
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
             accounts = json["users"] as? [[String: Any]] ?? json["accounts"] as? [[String: Any]] ?? json[kind] as? [[String: Any]] ?? []
             error = ""
@@ -2334,6 +2342,7 @@ struct ProfileVideoPlayerSheet: View {
                 onSave: {},
                 onComments: {},
                 commentsOpen: false,
+                commentsHeight: 0,
                 onShare: {},
                 onProfile: {},
                 onSong: {},
