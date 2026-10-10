@@ -115,8 +115,44 @@ struct LerizAPI {
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
     }
     static func follow(username: String) async throws {
+        let safeUsername = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
         let body = try JSONSerialization.data(withJSONObject: ["username": username])
-        _ = try await request("api/users/\(username)/follow", method: "POST", body: body)
+        _ = try await request("api/users/\(safeUsername)/follow", method: "POST", body: body)
+    }
+
+    static func saveProfile(displayName: String, username: String, bio: String) async throws -> [String: Any] {
+        let payload: [String: String] = ["displayName": displayName, "username": username, "bio": bio]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let (data, _) = try await request("api/me", method: "PATCH", body: body)
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        return json["user"] as? [String: Any] ?? json
+    }
+
+    static func uploadAvatar(data imageData: Data) async throws {
+        let boundary = "LerizBoundary-\(UUID().uuidString)"
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"avatar\"; filename=\"avatar.jpg\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        _ = try await request("api/me/avatar", method: "POST", body: body, contentType: "multipart/form-data; boundary=\(boundary)")
+    }
+
+    static func deleteAccount() async throws {
+        _ = try await request("api/me", method: "DELETE", body: Data("{}".utf8))
+    }
+
+    static func searchHashtags(prefix: String) async throws -> [[String: Any]] {
+        let q = prefix.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? prefix
+        let (data, _) = try await request("api/hashtags?q=\(q)&limit=25")
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        return json["hashtags"] as? [[String: Any]] ?? []
+    }
+
+    static func createHashtag(name: String, description: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["name": name, "description": description])
+        _ = try await request("api/hashtags", method: "POST", body: body)
     }
 }
 
@@ -1396,6 +1432,7 @@ struct ProfileSheet: View {
     @State private var selectedTab = 0
     @State private var showEdit = false
     @State private var showProfileMenu = false
+    @State private var showDeleteError = ""
     @State private var showNotifications = false
     @State private var showSavedVideos = false
     @State private var selectedAvatar: PhotosPickerItem?
@@ -1459,7 +1496,22 @@ struct ProfileSheet: View {
                 Button("Settings") { showEdit = true }
                 Button("Saved videos") { showSavedVideos = true }
                 Button("Notifications") { showNotifications = true }
+                Button("Delete account", role: .destructive) {
+                    Task {
+                        do {
+                            try await LerizAPI.deleteAccount()
+                            await MainActor.run {
+                                authToken = ""
+                                UserDefaults.standard.removeObject(forKey: "lerizUsername")
+                                dismiss()
+                            }
+                        } catch {
+                            await MainActor.run { showDeleteError = error.localizedDescription }
+                        }
+                    }
+                }
                 Button("Log out", role: .destructive) {
+                    Task { try? await LerizAPI.request("api/auth/logout", method: "POST", body: Data("{}".utf8)) }
                     authToken = ""
                     UserDefaults.standard.removeObject(forKey: "lerizUsername")
                     dismiss()
@@ -1469,13 +1521,21 @@ struct ProfileSheet: View {
             .sheet(isPresented: $showEdit) { EditProfileDemo() }
             .sheet(isPresented: $showNotifications) { InboxSheet() }
             .sheet(isPresented: $showSavedVideos) { SavedVideosSheet() }
+            .alert("Account action failed", isPresented: Binding(get: { !showDeleteError.isEmpty }, set: { if !$0 { showDeleteError = "" } })) {
+                Button("OK", role: .cancel) { showDeleteError = "" }
+            } message: { Text(showDeleteError) }
             .onChange(of: selectedAvatar) { item in
                 guard let item else { return }
                 Task {
                     if let data = try? await item.loadTransferable(type: Data.self),
                        let image = UIImage(data: data),
                        let jpeg = image.jpegData(compressionQuality: 0.82) {
-                        await MainActor.run { profileImageData = jpeg.base64EncodedString() }
+                        do {
+                            try await LerizAPI.uploadAvatar(data: jpeg)
+                            await MainActor.run { profileImageData = jpeg.base64EncodedString() }
+                        } catch {
+                            await MainActor.run { showDeleteError = "Profile picture upload failed: (error.localizedDescription)" }
+                        }
                     }
                 }
             }
@@ -1497,13 +1557,37 @@ struct EditProfileDemo: View {
     @AppStorage("lerizDisplayName") private var name = ""
     @AppStorage("lerizUsername") private var username = ""
     @AppStorage("lerizBio") private var bio = "Capture your world, your way."
+    @State private var saving = false
+    @State private var error = ""
+    @State private var saved = false
     var body: some View {
         NavigationStack {
             Form {
-                Section("Profile") { TextField("Name", text: $name); TextField("Username", text: $username); TextField("Bio", text: $bio, axis: .vertical) }
-                Section { Text("Your profile details are saved on this device.").font(.caption).foregroundStyle(.secondary) }
+                Section("Profile") {
+                    TextField("Name", text: $name)
+                    TextField("Username", text: $username).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Bio", text: $bio, axis: .vertical)
+                }
+                if !error.isEmpty { Section { Text(error).foregroundStyle(.red).font(.caption) } }
+                if saved { Section { Label("Saved to your account", systemImage: "checkmark.circle.fill").foregroundStyle(.green) } }
             }.navigationTitle("Edit profile").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(saving ? "Saving…" : "Save") {
+                            guard !saving else { return }
+                            saving = true; error = ""; saved = false
+                            Task {
+                                do {
+                                    _ = try await LerizAPI.saveProfile(displayName: name, username: username, bio: bio)
+                                    await MainActor.run { saving = false; saved = true }
+                                } catch {
+                                    await MainActor.run { saving = false; self.error = error.localizedDescription }
+                                }
+                            }
+                        }.disabled(saving || username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
         }.preferredColorScheme(.dark)
     }
 }
