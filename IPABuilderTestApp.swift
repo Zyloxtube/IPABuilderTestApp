@@ -807,6 +807,8 @@ struct ClipPage: View {
             if !videoFailed, let url = URL(string: clip.videoURL) {
                 PlayerSurface(player: player)
                     .ignoresSafeArea()
+                    .scaleEffect(commentsOpen ? 0.5 : 1, anchor: .top)
+                    .animation(.spring(response: 0.42, dampingFraction: 0.88), value: commentsOpen)
                     .onAppear {
                         player.replaceCurrentItem(with: AVPlayerItem(url: url))
                         player.isMuted = false
@@ -1024,55 +1026,34 @@ struct CommentsSheet: View {
     @State private var likedComments: Set<String> = []
     @State private var replyToID: String? = nil
     @State private var replyToAuthor = ""
-    @State private var previewPlayer = AVPlayer()
     @FocusState private var commentFieldFocused: Bool
     @GestureState private var dragTranslation: CGFloat = 0
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                ZStack {
-                    Color.clear
-                    PlayerSurface(player: previewPlayer)
-                        .frame(width: min(UIScreen.main.bounds.width, UIScreen.main.bounds.height * 0.5 * 9.0 / 16.0), height: UIScreen.main.bounds.height * 0.5)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.10), lineWidth: 1))
-                    VStack {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(clip.creator).font(.system(size: 13, weight: .bold)).lineLimit(1)
-                                Text("Comments").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.68))
-                            }
-                            Spacer()
-                            Button { onDismiss() } label: {
-                                Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
-                                    .padding(10).background(Color.black.opacity(0.55), in: Circle())
-                            }.buttonStyle(.plain)
-                        }
-                        Spacer()
-                        Capsule().fill(.white.opacity(0.55)).frame(width: 38, height: 4).padding(.bottom, 8)
-                    }.padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 2)
+                HStack(spacing: 10) {
+                    Capsule().fill(.white.opacity(0.38)).frame(width: 34, height: 4)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Comments").font(.system(size: 15, weight: .bold))
+                        Text(clip.creator).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.62)).lineLimit(1)
+                    }
+                    Spacer()
+                    Button { onDismiss() } label: {
+                        Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                            .padding(9).background(Color.white.opacity(0.10), in: Circle())
+                    }.buttonStyle(.plain)
                 }
-                .frame(height: UIScreen.main.bounds.height * 0.5)
+                .padding(.horizontal, 17)
+                .frame(height: 48)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
-                .onTapGesture { onDismiss() }
                 .gesture(DragGesture(minimumDistance: 8).updating($dragTranslation) { value, state, _ in
                     if value.translation.height > 0 { state = value.translation.height }
                 }.onEnded { value in
-                    if value.translation.height > UIScreen.main.bounds.height * 0.20 {
-                        dismiss()
-                    }
+                    if value.translation.height > UIScreen.main.bounds.height * 0.12 { onDismiss() }
                 })
-                .onAppear {
-                    if let url = URL(string: clip.videoURL) {
-                        previewPlayer.replaceCurrentItem(with: AVPlayerItem(url: url))
-                        previewPlayer.isMuted = true
-                        previewPlayer.play()
-                    }
-                    Task { await loadComments() }
-                }
-                .onDisappear { previewPlayer.pause() }
+                .onAppear { Task { await loadComments() } }
 
                 Divider().overlay(Color.white.opacity(0.08))
 
@@ -1257,9 +1238,12 @@ struct CommentsSheet: View {
             Text("This comment and its replies will be deleted.")
         }
         .preferredColorScheme(.dark)
+        .frame(height: UIScreen.main.bounds.height * 0.5, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
         .offset(y: max(0, dragTranslation))
-        .background(Color.clear.ignoresSafeArea())
-        .ignoresSafeArea()
+        .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
+        .ignoresSafeArea(edges: .bottom)
         .onAppear {
             let saved = (try? JSONDecoder().decode([String].self, from: Data(likedCommentIDsJSON.utf8))) ?? []
             likedComments = Set(saved)
