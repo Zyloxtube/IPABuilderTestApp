@@ -502,7 +502,8 @@ struct LoopFeedView: View {
                             isSaved: savedIDs.contains(clip.id),
                             onLike: { toggleLike(clip.id) },
                             onSave: { toggleSave(clip.id) },
-                            onComments: { showComments = true },
+                            onComments: { withAnimation(.spring(response: 0.42, dampingFraction: 0.88)) { showComments = true } },
+                            commentsOpen: showComments,
                             onShare: { showShare = true },
                             onProfile: { selectedProfileClip = clip },
                             onSong: { selectedSongClip = clip },
@@ -529,7 +530,15 @@ struct LoopFeedView: View {
         }
         .task { await loadFeed() }
         .onChange(of: selectedTab) { value in Task { await loadFeed(mode: value == "Following" ? "following" : "forYou") } }
-        .fullScreenCover(isPresented: $showComments) { if !clips.isEmpty { CommentsSheet(clip: clips[selectedClip]) } }
+        .overlay {
+            if showComments && !clips.isEmpty {
+                CommentsSheet(clip: clips[selectedClip]) {
+                    withAnimation(.spring(response: 0.36, dampingFraction: 0.88)) { showComments = false }
+                }
+                .transition(.move(edge: .bottom))
+                .zIndex(100)
+            }
+        }
         .sheet(isPresented: $showSearch) {
             SearchSheet(clips: clips) { chosenClip in
                 if let index = clips.firstIndex(where: { $0.id == chosenClip.id }) {
@@ -722,6 +731,7 @@ struct ClipPage: View {
     let onLike: () -> Void
     let onSave: () -> Void
     let onComments: () -> Void
+    let commentsOpen: Bool
     let onShare: () -> Void
     let onProfile: () -> Void
     let onSong: () -> Void
@@ -785,6 +795,7 @@ struct ClipPage: View {
             }
             LinearGradient(colors: [.black.opacity(0.22), .clear, .clear, .black.opacity(0.88)], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
+                .opacity(commentsOpen ? 0 : 1)
 
             VStack {
                 Spacer()
@@ -891,9 +902,12 @@ struct ClipPage: View {
                 }
                 .padding(.horizontal, 15)
                 .padding(.bottom, 112)
+                .opacity(commentsOpen ? 0 : 1)
+                .animation(.easeInOut(duration: 0.22), value: commentsOpen)
+                .allowsHitTesting(!commentsOpen)
             }
 
-            if !isPlaying {
+            if !isPlaying && !commentsOpen {
                 Image(systemName: "play.fill")
                     .font(.system(size: 25, weight: .bold))
                     .foregroundStyle(.white)
@@ -948,7 +962,7 @@ final class PlayerView: UIView {
 
 struct CommentsSheet: View {
     let clip: FeedClip
-    @Environment(\.dismiss) private var dismiss
+    let onDismiss: () -> Void
     @State private var comment = ""
     @State private var posted: [String] = []
     @State private var commentIDs: [String] = []
@@ -986,7 +1000,7 @@ struct CommentsSheet: View {
                                 Text("Comments").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.68))
                             }
                             Spacer()
-                            Button { dismiss() } label: {
+                            Button { onDismiss() } label: {
                                 Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
                                     .padding(10).background(Color.black.opacity(0.55), in: Circle())
                             }.buttonStyle(.plain)
@@ -1199,7 +1213,7 @@ struct CommentsSheet: View {
         }
         .preferredColorScheme(.dark)
         .offset(y: max(0, dragTranslation))
-        .background(Color.black.ignoresSafeArea())
+        .background(Color.clear.ignoresSafeArea())
         .ignoresSafeArea()
         .onAppear {
             let saved = (try? JSONDecoder().decode([String].self, from: Data(likedCommentIDsJSON.utf8))) ?? []
