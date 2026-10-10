@@ -1175,16 +1175,9 @@ struct VideoEditorView: View {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 18))
                 .padding(.horizontal, 12)
-                HStack {
-                    TextField("Write a caption…", text: $text, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                    Button { showTextTools = true } label: {
-                        Image(systemName: "textformat").font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(.white).frame(width: 46, height: 46)
-                            .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-                    }
-                    .accessibilityLabel("Text styling")
-                }.padding(.horizontal, 14)
+                TextField("Write a caption…", text: $text, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal, 14)
                 Text("Drag text on the video to position it").font(.caption).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             }
@@ -1192,7 +1185,9 @@ struct VideoEditorView: View {
             .navigationTitle("Edit video").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Back") { dismiss() } }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { showTextTools = true } label: { Image(systemName: "textformat") }
+                        .accessibilityLabel("Edit text style")
                     Button("Post") { onPost(text, url) }.fontWeight(.bold)
                 }
             }
