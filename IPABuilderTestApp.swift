@@ -608,9 +608,11 @@ struct LoopFeedView: View {
         .onChange(of: selectedTab) { value in Task { await loadFeed(mode: value == "Following" ? "following" : "forYou") } }
         .overlay {
             if showComments && !clips.isEmpty {
-                CommentsSheet(clip: clips[selectedClip], sheetHeight: $commentsSheetHeight) {
-                    withAnimation(.spring(response: 0.30, dampingFraction: 0.90)) { showComments = false }
-                }
+                CommentsSheet(
+                    clip: clips[selectedClip],
+                    onDismiss: { withAnimation(.spring(response: 0.30, dampingFraction: 0.90)) { showComments = false } },
+                    sheetHeight: $commentsSheetHeight
+                )
                 .transition(.move(edge: .bottom))
                 .zIndex(100)
             }
