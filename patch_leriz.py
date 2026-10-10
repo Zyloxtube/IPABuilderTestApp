@@ -171,5 +171,62 @@ r'''                                     do {
 "profile follow action"
 )
 
+sub(
+r'''                            HStack(alignment: .top, spacing: 11) {
+                                Circle().fill(LinearGradient(colors: [.purple, .pink, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .frame(width: 38, height: 38)''',
+r'''                            let isReply = index < commentParentIDs.count && commentParentIDs[index] != nil
+                            HStack(alignment: .top, spacing: 11) {
+                                Circle().fill(LinearGradient(colors: [.purple, .pink, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .frame(width: isReply ? 27 : 38, height: isReply ? 27 : 38)''',
+"smaller reply avatar"
+)
+
+sub(
+r'''                                    Text(text).font(.system(size: 14))''',
+r'''                                    Text(text).font(.system(size: isReply ? 12 : 14))''',
+"smaller reply text"
+)
+
+sub(
+r'''            let rows = try await LerizAPI.fetchComments(videoID: videoID)
+            await MainActor.run {
+                posted = rows.compactMap { $0["text"] as? String }''',
+r'''            let rows = try await LerizAPI.fetchComments(videoID: videoID)
+            let roots = rows.filter { ($0["parentID"] ?? $0["parentId"]) == nil || ($0["parentID"] as? String ?? $0["parentId"] as? String ?? "").isEmpty }
+            var orderedRows: [[String: Any]] = []
+            for root in roots {
+                orderedRows.append(root)
+                let rootID = root["id"] as? String ?? ""
+                orderedRows.append(contentsOf: rows.filter {
+                    (($0["parentID"] ?? $0["parentId"]) as? String) == rootID
+                })
+            }
+            let includedIDs = Set(orderedRows.compactMap { $0["id"] as? String })
+            orderedRows.append(contentsOf: rows.filter { row in
+                guard let id = row["id"] as? String else { return false }
+                return !includedIDs.contains(id)
+            })
+            await MainActor.run {
+                posted = orderedRows.compactMap { $0["text"] as? String }''',
+"order replies directly below their parent"
+)
+
+sub(
+r'''                commentIDs = rows.enumerated().map { index, row in''',
+r'''                commentIDs = orderedRows.enumerated().map { index, row in''',
+"ordered comment ids"
+)
+sub(
+r'''                commentAuthors = rows.map { row in''',
+r'''                commentAuthors = orderedRows.map { row in''',
+"ordered comment authors"
+)
+sub(
+r'''                commentParentIDs = rows.map { row in''',
+r'''                commentParentIDs = orderedRows.map { row in''',
+"ordered comment parents"
+)
+
 p.write_text(s, encoding="utf-8")
 print("Leriz client patches applied.")
