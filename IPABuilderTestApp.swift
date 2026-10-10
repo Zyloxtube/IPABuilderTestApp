@@ -721,26 +721,10 @@ struct ClipPage: View {
     @State private var tappedHashtag = ""
     @State private var showHashtagPage = false
 
-    private var linkedCaption: AttributedString {
-        var result = AttributedString()
-        guard let regex = try? NSRegularExpression(pattern: "#([A-Za-z0-9_]{1,50})") else {
-            return AttributedString(clip.caption)
-        }
-        let nsRange = NSRange(clip.caption.startIndex..<clip.caption.endIndex, in: clip.caption)
-        let matches = regex.matches(in: clip.caption, range: nsRange)
-        var cursor = clip.caption.startIndex
-        for match in matches {
-            guard let range = Range(match.range, in: clip.caption) else { continue }
-            result += AttributedString(clip.caption[cursor..<range.lowerBound])
-            var tag = AttributedString(clip.caption[range])
-            let name = String(clip.caption[range].dropFirst())
-            tag.link = URL(string: "leriz://hashtag/\(name)")
-            tag.foregroundColor = UIColor.cyan
-            result += tag
-            cursor = range.upperBound
-        }
-        result += AttributedString(clip.caption[cursor...])
-        return result
+    private var captionHashtags: [String] {
+        clip.caption.split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "_" && $0 != "#" })
+            .filter { $0.hasPrefix("#") && $0.count > 1 }
+            .map { String($0.dropFirst()) }
     }
 
     var body: some View {
@@ -2201,6 +2185,7 @@ struct VideoEditorView: View {
                         }.padding(10)
                         ForEach(Array(hashtagMatches.enumerated()), id: .offset) { _, item in
                             let tag = item["name"] as? String ?? item["tag"] as? String ?? ""
+                            let videoCount = item["videoCount"] as? Int ?? 0
                             Button {
                                 insertHashtag(tag)
                             } label: {
@@ -2208,7 +2193,7 @@ struct VideoEditorView: View {
                                     Image(systemName: "number").foregroundStyle(.cyan)
                                     Text(tag.hasPrefix("#") ? tag : "#\(tag)")
                                     Spacer()
-                                    Text("\(item["videoCount"] as? Int ?? 0) videos").font(.caption2).foregroundStyle(.secondary)
+                                    Text("\(videoCount) videos").font(.caption2).foregroundStyle(.secondary)
                                 }.padding(.horizontal, 11).padding(.vertical, 8)
                             }.buttonStyle(.plain)
                         }
