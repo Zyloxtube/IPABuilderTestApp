@@ -284,7 +284,7 @@ struct LerizLaunchView: View {
         .background(Color.black.ignoresSafeArea())
         .task { await restoreExistingSession() }
         .onChange(of: authToken) { value in
-            if value.isEmpty { enterApp = false; showWelcome = false; isSignUp = false; password = "" }
+            if value.isEmpty { enterApp = false; showWelcome = false; isSignUp = false; password = ""; isCheckingSession = false }
         }
         .preferredColorScheme(.dark)
     }
@@ -1045,6 +1045,7 @@ struct CommentsSheet: View {
     @State private var showDeleteConfirmation = false
     @State private var deletingCommentID: String? = nil
     @AppStorage("lerizUsername") private var currentUsername = ""
+    @AppStorage("lerizProfileImageData") private var profileImageData = ""
     @State private var commentError = ""
     @State private var showEmojiPicker = false
     @AppStorage("lerizLikedCommentIDs") private var likedCommentIDsJSON = "[]"
@@ -1228,7 +1229,14 @@ struct CommentsSheet: View {
                     .background(.ultraThinMaterial)
                 } else {
                     HStack(spacing: 10) {
-                        LerizAvatarView(urlString: "", size: 46, fallbackColor: .purple)
+                        Group {
+                            if let data = Data(base64Encoded: profileImageData), let image = UIImage(data: data) {
+                                Image(uiImage: image).resizable().scaledToFill()
+                            } else {
+                                LerizAvatarView(urlString: "", size: 46, fallbackColor: .purple)
+                            }
+                        }
+                        .frame(width: 46, height: 46).clipShape(Circle())
                         HStack(spacing: 8) {
                             TextField("Add a comment…", text: $comment, axis: .vertical)
                                 .font(.system(size: 14))
@@ -1889,15 +1897,6 @@ struct ProfileSheet: View {
                                 Button { selectedProfileVideo = video } label: {
                                     SongGridVideoTile(clip: video)
                                         .aspectRatio(9.0 / 16.0, contentMode: .fit)
-                                        .overlay(alignment: .bottomLeading) {
-                                            HStack(spacing: 5) {
-                                                Image(systemName: "eye").font(.system(size: 12, weight: .semibold))
-                                                Text(video.views.formatted()).font(.system(size: 11, weight: .bold))
-                                            }
-                                            .foregroundStyle(.white)
-                                            .padding(.leading, 9).padding(.bottom, 9)
-                                            .shadow(color: .black.opacity(0.9), radius: 3)
-                                        }
                                         .clipped()
                                 }.buttonStyle(.plain)
                             }
