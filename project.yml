@@ -21,6 +21,7 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Leriz
         INFOPLIST_KEY_NSCameraUsageDescription: Leriz uses the front camera for face effects and video recording.
         INFOPLIST_KEY_NSMicrophoneUsageDescription: Leriz records microphone audio with your videos.
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Leriz lets you choose existing videos and images to create posts.
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Leriz can save recorded videos to your Photos library.
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         CODE_SIGNING_ALLOWED: NO
