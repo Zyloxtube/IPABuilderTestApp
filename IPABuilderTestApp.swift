@@ -85,6 +85,15 @@ struct LerizAPI {
 
     static func toggleLike(videoID: String) async throws { _ = try await request("api/videos/\(videoID)/like", method: "POST", body: Data("{}".utf8)) }
     static func toggleSave(videoID: String) async throws { _ = try await request("api/videos/\(videoID)/save", method: "POST", body: Data("{}".utf8)) }
+    static func fetchComments(videoID: String) async throws -> [[String: Any]] {
+        let (data, _) = try await request("api/videos/\(videoID)/comments")
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        return json["comments"] as? [[String: Any]] ?? []
+    }
+    static func postComment(videoID: String, text: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["text": text])
+        _ = try await request("api/videos/\(videoID)/comments", method: "POST", body: body)
+    }
     static func follow(username: String) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["username": username])
         _ = try await request("api/users/\(username)/follow", method: "POST", body: body)
@@ -114,6 +123,13 @@ struct FeedClip: Identifiable {
     let accent: Color
     let videoURL: String
     let symbol: String
+
+    var serverID: String? {
+        guard let url = URL(string: videoURL) else { return nil }
+        let parts = url.pathComponents
+        guard let index = parts.firstIndex(of: "videos"), parts.indices.contains(index + 1) else { return nil }
+        return parts[index + 1]
+    }
 
     // The feed starts empty and is populated only by videos returned by the Leriz backend.
     static let samples: [FeedClip] = []
@@ -693,7 +709,7 @@ struct ClipPage: View {
                                 .accessibilityLabel("Follow creator")
                             }
                         }
-                        actionButton(isLiked ? "heart.fill" : "heart", value: isLiked ? "248.7K" : clip.likes, color: .white, gradient: isLiked, action: onLike)
+                        actionButton(isLiked ? "heart.fill" : "heart", value: clip.likes, color: .white, gradient: isLiked, action: onLike)
                         actionButton("text.bubble", value: clip.comments, color: .white, action: onComments)
                         actionButton(isSaved ? "bookmark.fill" : "bookmark", value: isSaved ? "Saved" : "Save", color: isSaved ? Color(red: 1, green: 0.78, blue: 0.16) : .white, action: onSave)
                         actionButton("arrowshape.turn.up.right", value: "Share", color: .white, action: onShare)
@@ -768,7 +784,10 @@ struct CommentsSheet: View {
     let clip: FeedClip
     @Environment(\.dismiss) private var dismiss
     @State private var comment = ""
-    @State private var posted: [String] = ["This edit is everything 🔥", "needed this on my feed", "the vibes are immaculate"]
+    @State private var posted: [String] = []
+    @State private var commentIDs: [String] = []
+    @State private var commentError = ""
+    @State private var showEmojiPicker = false
     @State private var likedComments: Set<Int> = []
     @State private var previewPlayer = AVPlayer()
     @FocusState private var commentFieldFocused: Bool
@@ -802,6 +821,7 @@ struct CommentsSheet: View {
                         previewPlayer.isMuted = true
                         previewPlayer.play()
                     }
+                    Task { await loadComments() }
                 }
                 .onDisappear { previewPlayer.pause() }
 
@@ -809,13 +829,20 @@ struct CommentsSheet: View {
 
                 ScrollView {
                     LazyVStack(spacing: 2) {
+                        if posted.isEmpty {
+                            VStack(spacing: 8) {
+                                Image(systemName: "text.bubble").font(.system(size: 30)).foregroundStyle(.secondary)
+                                Text(commentError.isEmpty ? "No comments yet" : commentError).font(.subheadline).foregroundStyle(.secondary)
+                                Text("Be the first to comment.").font(.caption).foregroundStyle(.secondary)
+                            }.frame(maxWidth: .infinity).padding(.top, 36)
+                        }
                         ForEach(Array(posted.enumerated()), id: \.offset) { index, text in
                             HStack(alignment: .top, spacing: 11) {
                                 Circle().fill(LinearGradient(colors: [.purple, .pink, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                                     .frame(width: 38, height: 38)
                                     .overlay(Image(systemName: "person").font(.system(size: 15)).foregroundStyle(.white))
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(["loopfan_24", "noor.exe", "pixelkid"][index % 3])
+                                    Text(index < commentIDs.count ? "user" : (UserDefaults.standard.string(forKey: "lerizUsername") ?? "user"))
                                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
                                     Text(text).font(.system(size: 14))
                                     HStack(spacing: 14) {
@@ -865,7 +892,11 @@ struct CommentsSheet: View {
                     .padding(.horizontal, 13)
                     .padding(.vertical, 9)
                     .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 22))
-                    Button { commentFieldFocused = false } label: {
+                    Menu {
+                        ForEach(["😀","😂","🥹","😍","🔥","❤️","😭","👏","✨","🙏","💀","🥰"], id: \.self) { emoji in
+                            Button(emoji) { comment.append(emoji) }
+                        }
+                    } label: {
                         Image(systemName: "face.smiling").font(.system(size: 21)).foregroundStyle(.white.opacity(0.8))
                     }
                     .buttonStyle(.plain)
@@ -885,12 +916,31 @@ struct CommentsSheet: View {
         .preferredColorScheme(.dark)
     }
 
+    private func loadComments() async {
+        guard let videoID = clip.serverID else { commentError = "Comments are unavailable for this video."; return }
+        do {
+            let rows = try await LerizAPI.fetchComments(videoID: videoID)
+            await MainActor.run {
+                posted = rows.compactMap { $0["text"] as? String }
+                commentIDs = rows.compactMap { $0["id"].map { String(describing: $0) } }
+                commentError = ""
+            }
+        } catch {
+            await MainActor.run { commentError = "Could not load comments. Try again." }
+        }
+    }
+
     private func postComment() {
         let clean = comment.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { return }
-        posted.insert(clean, at: 0)
-        comment = ""
-        commentFieldFocused = false
+        guard !clean.isEmpty, let videoID = clip.serverID else { return }
+        Task {
+            do {
+                try await LerizAPI.postComment(videoID: videoID, text: clean)
+                await MainActor.run { posted.insert(clean, at: 0); commentIDs.insert(UUID().uuidString, at: 0); comment = ""; commentFieldFocused = false }
+            } catch {
+                await MainActor.run { commentError = "Comment failed: \(error.localizedDescription)" }
+            }
+        }
     }
 }
 
@@ -1183,6 +1233,11 @@ struct ProfileSheet: View {
     var clip: FeedClip? = nil
     @State private var selectedTab = 0
     @State private var showEdit = false
+    @State private var showProfileMenu = false
+    @State private var showNotifications = false
+    @State private var showSavedVideos = false
+    @AppStorage("lerizAuthToken") private var authToken = ""
+    @AppStorage("lerizUsername") private var currentUsername = ""
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -1191,8 +1246,8 @@ struct ProfileSheet: View {
                         Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
                             .frame(width: 88, height: 88).overlay(Image(systemName: "person").font(.system(size: 40)))
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(clip?.creator ?? "Your Leriz").font(.title3.bold())
-                            Text(clip?.handle ?? "@yourleriz").font(.subheadline).foregroundStyle(.secondary)
+                            Text(clip?.creator ?? (currentUsername.isEmpty ? "Leriz user" : currentUsername)).font(.title3.bold())
+                            Text(clip?.handle ?? "@\(currentUsername.isEmpty ? "user" : currentUsername)").font(.subheadline).foregroundStyle(.secondary)
                             Text(clip == nil ? "Your creator profile" : "Creator on Leriz").font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -1221,9 +1276,22 @@ struct ProfileSheet: View {
             .navigationTitle("Profile").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button { dismiss() } label: { Image(systemName: "chevron.left").fontWeight(.semibold) } }
-                ToolbarItem(placement: .topBarTrailing) { Button { showEdit = true } label: { Image(systemName: "line.3.horizontal") } }
+                ToolbarItem(placement: .topBarTrailing) { Button { showProfileMenu = true } label: { Image(systemName: "line.3.horizontal") } }
+            }
+            .confirmationDialog("Profile menu", isPresented: $showProfileMenu, titleVisibility: .visible) {
+                Button("Settings") { showEdit = true }
+                Button("Saved videos") { showSavedVideos = true }
+                Button("Notifications") { showNotifications = true }
+                Button("Log out", role: .destructive) {
+                    authToken = ""
+                    UserDefaults.standard.removeObject(forKey: "lerizUsername")
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) {}
             }
             .sheet(isPresented: $showEdit) { EditProfileDemo() }
+            .sheet(isPresented: $showNotifications) { InboxSheet() }
+            .sheet(isPresented: $showSavedVideos) { SavedVideosSheet() }
         }.preferredColorScheme(.dark)
     }
     private func stat(_ n: String, _ label: String) -> some View {
@@ -1254,16 +1322,40 @@ struct EditProfileDemo: View {
 }
 
 struct InboxSheet: View {
+    @State private var notifications: [[String: Any]] = []
+    @State private var loadError = ""
     var body: some View {
         NavigationStack {
-            List {
-                inboxRow("sparkles", "Welcome to Leriz", "Your new scroll starts here.", "Now", .cyan)
-                inboxRow("heart", "Activity", "When people like your videos, you'll see it here.", "Today", .pink)
-                inboxRow("person.2", "New creators", "Find your next favorite creator.", "Today", .purple)
+            Group {
+                if notifications.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "bell").font(.system(size: 34)).foregroundStyle(.secondary)
+                        Text(loadError.isEmpty ? "No notifications" : loadError).font(.headline).foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List(notifications.indices, id: \.self) { index in
+                        let row = notifications[index]
+                        HStack(spacing: 12) {
+                            Circle().fill(.white.opacity(0.1)).frame(width: 42, height: 42).overlay(Image(systemName: "bell").foregroundStyle(.cyan))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(row["type"] as? String ?? "Activity").fontWeight(.semibold)
+                                Text((row["actor"] as? [String: Any])?["username"] as? String ?? "Leriz user").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }.padding(.vertical, 4)
+                    }.scrollContentBackground(.hidden)
+                }
             }
-            .scrollContentBackground(.hidden)
-            .navigationTitle("Inbox")
+            .background(Color.black)
+            .navigationTitle("Notifications")
             .navigationBarTitleDisplayMode(.inline)
+            .task {
+                do {
+                    let (data, _) = try await LerizAPI.request("api/notifications")
+                    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+                    notifications = json["notifications"] as? [[String: Any]] ?? []
+                    if notifications.isEmpty { loadError = "" }
+                } catch { loadError = "Could not load notifications." }
+            }
         }.preferredColorScheme(.dark)
     }
     private func inboxRow(_ icon: String, _ title: String, _ detail: String, _ time: String, _ color: Color) -> some View {
@@ -1273,6 +1365,50 @@ struct InboxSheet: View {
             Spacer()
             Text(time).font(.caption2).foregroundStyle(.secondary)
         }.padding(.vertical, 5)
+    }
+}
+
+struct SavedVideosSheet: View {
+    @State private var videos: [FeedClip] = []
+    @State private var errorMessage = ""
+    var body: some View {
+        NavigationStack {
+            Group {
+                if videos.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "bookmark").font(.system(size: 34)).foregroundStyle(.secondary)
+                        Text(errorMessage.isEmpty ? "No saved videos" : errorMessage).font(.headline).foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(videos) { video in
+                                HStack(spacing: 12) {
+                                    Image(systemName: "play.rectangle.fill").font(.system(size: 28)).foregroundStyle(.cyan)
+                                    VStack(alignment: .leading) { Text(video.caption.isEmpty ? "Video" : video.caption).lineLimit(2); Text(video.handle).font(.caption).foregroundStyle(.secondary) }
+                                }.padding(.horizontal)
+                            }
+                        }.padding(.vertical)
+                    }
+                }
+            }
+            .background(Color.black)
+            .navigationTitle("Saved videos")
+            .navigationBarTitleDisplayMode(.inline)
+            .task {
+                do {
+                    let (data, _) = try await LerizAPI.request("api/saved")
+                    let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+                    let rows = json["videos"] as? [[String: Any]] ?? []
+                    videos = rows.compactMap { row in
+                        guard let id = row["id"] as? String else { return nil }
+                        let user = row["user"] as? [String: Any] ?? [:]
+                        let username = user["username"] as? String ?? "user"
+                        return FeedClip(id: abs(id.hashValue % 2_000_000_000), creator: user["displayName"] as? String ?? username, handle: "@\(username)", caption: row["caption"] as? String ?? "", tags: "", song: "", likes: String(row["likes"] as? Int ?? 0), comments: String(row["comments"] as? Int ?? 0), views: row["views"] as? Int ?? 0, accent: .purple, videoURL: row["videoURL"] as? String ?? "\(LerizAPI.baseURL)/api/videos/\(id)/file", symbol: "person")
+                    }
+                } catch { errorMessage = "Could not load saved videos." }
+            }
+        }.preferredColorScheme(.dark)
     }
 }
 
