@@ -569,7 +569,7 @@ struct LoopFeedView: View {
                     ForEach(Array(clips.enumerated()), id: \.element.id) { index, clip in
                         ClipPage(
                             clip: clip,
-                            isActive: selectedClip == index,
+                            isActive: selectedClip == index && !showComments && !showSearch && !showProfile && selectedProfileClip == nil && selectedSongClip == nil && !showInbox && !showShare && !showCreate,
                             isLiked: likedIDs.contains(clip.id),
                             isSaved: savedIDs.contains(clip.id),
                             onLike: { toggleLike(clip.id) },
