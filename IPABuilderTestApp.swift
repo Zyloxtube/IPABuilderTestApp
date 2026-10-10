@@ -1861,6 +1861,8 @@ struct ProfileSheet: View {
     @State private var profileLoading = true
     @State private var profileLoadError = ""
     @State private var selectedProfileVideo: FeedClip?
+    @State private var videoToDelete: FeedClip?
+    @State private var showVideoDeleteConfirmation = false
     @State private var showFollowersList = false
     @State private var showFollowingList = false
     @State private var selectedAccountProfile: FeedClip?
@@ -1974,7 +1976,18 @@ struct ProfileSheet: View {
                                     SongGridVideoTile(clip: video)
                                         .aspectRatio(9.0 / 16.0, contentMode: .fit)
                                         .clipped()
-                                }.buttonStyle(.plain)
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    if isOwnProfile {
+                                        Button(role: .destructive) {
+                                            videoToDelete = video
+                                            showVideoDeleteConfirmation = true
+                                        } label: {
+                                            Label("Delete video", systemImage: "trash")
+                                        }
+                                    }
+                                }
                             }
                         }.padding(.horizontal, 3)
                     } else {
@@ -2055,7 +2068,17 @@ struct ProfileSheet: View {
                 .preferredColorScheme(.dark)
             }
             .task { await loadProfile() }
-            .alert("Account action failed", isPresented: Binding(get: { !showDeleteError.isEmpty }, set: { if !$0 { showDeleteError = "" } })) {
+            .confirmationDialog("Delete this video?", isPresented: $showVideoDeleteConfirmation, titleVisibility: .visible) {
+                Button("Delete video", role: .destructive) {
+                    if let video = videoToDelete {
+                        Task { await deleteProfileVideo(video) }
+                    }
+                }
+                Button("Cancel", role: .cancel) { videoToDelete = nil }
+            } message: {
+                Text("This video will be permanently removed from your profile.")
+            }
+            .alert("Account action failed", isPresented: Binding(get: { !showDeleteError.isEmpty }, set: { if !$0 { showDeleteError = "" } }))
                 Button("OK", role: .cancel) { showDeleteError = "" }
             } message: { Text(showDeleteError) }
             .onChange(of: selectedAvatar) { item in
@@ -2119,6 +2142,28 @@ struct ProfileSheet: View {
             profileLoadError = "Could not load profile: \(error.localizedDescription)"
         }
         profileLoading = false
+    }
+
+    private func deleteProfileVideo(_ video: FeedClip) async {
+        guard isOwnProfile else { return }
+        guard let serverID = video.serverID, !serverID.isEmpty else {
+            await MainActor.run { showDeleteError = "This video does not have a server ID, so it cannot be deleted." }
+            return
+        }
+        do {
+            let safeID = serverID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? serverID
+            _ = try await LerizAPI.request("api/videos/\(safeID)", method: "DELETE", body: Data("{}".utf8))
+            await MainActor.run {
+                profileVideos.removeAll { $0.serverID == serverID }
+                videoToDelete = nil
+            }
+            await loadProfile()
+        } catch {
+            await MainActor.run {
+                videoToDelete = nil
+                showDeleteError = "Could not delete video: \(error.localizedDescription)"
+            }
+        }
     }
 
     private func stat(_ n: String, _ label: String) -> some View {
@@ -2706,6 +2751,9 @@ struct VideoEditorView: View {
     let onPost: (String, URL) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
+    @State private var caption = ""
+    @State private var showPostDetails = false
+    @State private var previewPlayer = AVPlayer()
     @State private var textColor = Color.white
     @State private var opacity = 1.0
     @State private var useGradient = false
@@ -2769,7 +2817,19 @@ struct VideoEditorView: View {
 
     private var previewView: some View {
         ZStack {
-            VideoPlayer(player: AVPlayer(url: url))
+            PlayerSurface(player: previewPlayer)
+                .background(Color.black)
+                .onAppear {
+                    previewPlayer.replaceCurrentItem(with: AVPlayerItem(url: url))
+                    previewPlayer.isMuted = true
+                    previewPlayer.actionAtItemEnd = .none
+                    previewPlayer.play()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { notification in
+                    guard let item = notification.object as? AVPlayerItem,
+                          item === previewPlayer.currentItem else { return }
+                    previewPlayer.seek(to: .zero) { _ in previewPlayer.play() }
+                }
             if !text.isEmpty {
                 Text(text)
                     .font(.system(size: 28, weight: .black, design: .rounded))
@@ -2828,31 +2888,93 @@ struct VideoEditorView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 12) {
-                previewView
-                TextField("Write a caption…", text: $text, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .padding(.horizontal, 14)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .onChange(of: text) { _ in updateHashtagSuggestions() }
-                hashtagSuggestionsView
-                Text("Drag text on the video to position it")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
+            Group {
+                if !showPostDetails {
+                    VStack(spacing: 14) {
+                        previewView
+                            .frame(maxWidth: .infinity)
+                            .aspectRatio(9.0 / 16.0, contentMode: .fit)
+                            .padding(.horizontal, 24)
+                        Text("Preview your video")
+                            .font(.headline)
+                        Text("Your video plays in a loop. Add text on the next screen.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.top, 12)
+                } else {
+                    VStack(spacing: 16) {
+                        HStack(alignment: .top, spacing: 12) {
+                            previewView
+                                .frame(width: 116, height: 206)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Text on video")
+                                    .font(.subheadline.weight(.semibold))
+                                TextField("Add text overlay…", text: $text, axis: .vertical)
+                                    .textFieldStyle(.roundedBorder)
+                                    .onChange(of: text) { _ in updateHashtagSuggestions() }
+                                Button { showTextTools = true } label: {
+                                    Label("Text style", systemImage: "textformat")
+                                        .font(.subheadline.weight(.semibold))
+                                }
+                                .buttonStyle(.bordered)
+                                Text("Drag text on the preview to position it.")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Caption")
+                                .font(.subheadline.weight(.semibold))
+                            TextField("Write a caption…", text: $caption, axis: .vertical)
+                                .lineLimit(3...5)
+                                .textFieldStyle(.roundedBorder)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .onChange(of: caption) { _ in updateHashtagSuggestions() }
+                            hashtagSuggestionsView
+                        }
+                        .padding(.horizontal, 14)
+                        Spacer(minLength: 0)
+                        HStack(spacing: 12) {
+                            Button("Cancel", role: .cancel) { dismiss() }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                            Button(action: postVideo) {
+                                Text("Post").fontWeight(.bold)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(Color.cyan, in: RoundedRectangle(cornerRadius: 10))
+                                    .foregroundStyle(.black)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 10)
+                    }
+                    .padding(.top, 16)
+                }
             }
             .background(Color.black)
-            .navigationTitle("Edit video")
+            .navigationTitle(showPostDetails ? "Post video" : "Preview video")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Back") { dismiss() }
+                    Button(showPostDetails ? "Back" : "Cancel") {
+                        if showPostDetails { showPostDetails = false } else { dismiss() }
+                    }
                 }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { showTextTools = true } label: { Image(systemName: "textformat") }
-                        .accessibilityLabel("Edit text style")
-                    Button("Post", action: postVideo).fontWeight(.bold)
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !showPostDetails {
+                        Button("Next") { showPostDetails = true }
+                            .fontWeight(.bold)
+                    } else {
+                        Button { showTextTools = true } label: { Image(systemName: "textformat") }
+                            .accessibilityLabel("Edit text style")
+                    }
                 }
             }
             .alert("Create #\(pendingHashtag)", isPresented: $showCreateHashtag) {
@@ -2873,14 +2995,16 @@ struct VideoEditorView: View {
     }
 
     private func postVideo() {
-        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            onPost("", url)
-            return
-        }
+        let cleanCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        let overlay = text.trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
-            await ensureHashtagsExist(in: text)
-            let rendered = await renderTextIntoVideo(text: text, sourceURL: url, color: UIColor(textColor), opacity: opacity, border: useBorder, gradient: useGradient)
-            await MainActor.run { onPost(text, rendered ?? url) }
+            await ensureHashtagsExist(in: cleanCaption)
+            if overlay.isEmpty {
+                await MainActor.run { onPost(cleanCaption, url) }
+            } else {
+                let rendered = await renderTextIntoVideo(text: overlay, sourceURL: url, color: UIColor(textColor), opacity: opacity, border: useBorder, gradient: useGradient)
+                await MainActor.run { onPost(cleanCaption, rendered ?? url) }
+            }
         }
     }
 
