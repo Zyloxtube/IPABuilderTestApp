@@ -976,6 +976,7 @@ struct ClipPage: View {
             if isActive { player.play() }
             syncFollowingState()
         }
+        .onChange(of: followedHandlesJSON) { _ in syncFollowingState() }
         .sheet(isPresented: $showHashtagPage) { HashtagVideosSheet(tag: tappedHashtag) }
     }
 
@@ -1256,6 +1257,7 @@ struct CommentsSheet: View {
                         .padding(.vertical, 12)
                         .frame(minHeight: 54)
                         .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 25))
+                        .overlay(RoundedRectangle(cornerRadius: 25).stroke(Color.white.opacity(0.16), lineWidth: 1))
                         Menu {
                             ForEach(["😀","😂","🥹","😍","🔥","❤️","😭","👏","✨","🙏","💀","🥰"], id: \.self) { emoji in
                                 Button(emoji) { comment.append(emoji) }
