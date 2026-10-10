@@ -718,6 +718,22 @@ struct ClipPage: View {
     @State private var videoFailed = false
     @State private var isFollowing = false
     @State private var isMuted = false
+    @State private var tappedHashtag = ""
+    @State private var showHashtagPage = false
+
+    private var linkedCaption: AttributedString {
+        var value = AttributedString(clip.caption)
+        guard let regex = try? NSRegularExpression(pattern: "#([A-Za-z0-9_]{1,50})") else { return value }
+        let nsRange = NSRange(clip.caption.startIndex..<clip.caption.endIndex, in: clip.caption)
+        for match in regex.matches(in: clip.caption, range: nsRange).reversed() {
+            guard let stringRange = Range(match.range, in: clip.caption),
+                  let attributedRange = Range(match.range, in: value) else { continue }
+            let tag = String(clip.caption[stringRange].dropFirst())
+            value[attributedRange].link = URL(string: "leriz://hashtag/(tag)")
+            value[attributedRange].foregroundColor = UIColor.cyan
+        }
+        return value
+    }
 
     var body: some View {
         ZStack {
@@ -795,10 +811,16 @@ struct ClipPage: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        Text(clip.caption)
+                        Text(linkedCaption)
                             .font(.system(size: 14, weight: .medium))
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
+                            .environment(.openURL, OpenURLAction { url in
+                                guard url.scheme == "leriz", url.host == "hashtag" else { return .systemAction }
+                                tappedHashtag = url.pathComponents.dropFirst().first ?? ""
+                                showHashtagPage = !tappedHashtag.isEmpty
+                                return .handled
+                            })
                         Text(clip.tags).font(.system(size: 13, weight: .bold)).foregroundStyle(.white.opacity(0.94))
                         HStack(spacing: 7) {
                             Image(systemName: "music.note")
@@ -872,6 +894,7 @@ struct ClipPage: View {
         }
         .background(Color.black)
         .onAppear { if isActive { player.play() } }
+        .sheet(isPresented: $showHashtagPage) { HashtagVideosSheet(tag: tappedHashtag) }
     }
 
     private func actionButton(_ symbol: String, value: String, color: Color, gradient: Bool = false, action: @escaping () -> Void) -> some View {
