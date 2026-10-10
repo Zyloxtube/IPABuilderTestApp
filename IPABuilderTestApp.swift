@@ -1016,36 +1016,6 @@ struct CommentsSheet: View {
                 .onDisappear { previewPlayer.pause() }
 
                 Divider().overlay(Color.white.opacity(0.08))
-                    PlayerSurface(player: previewPlayer)
-                        .frame(width: 92, height: 56)
-                        .clipShape(RoundedRectangle(cornerRadius: 9))
-                        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.white.opacity(0.12), lineWidth: 1))
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(clip.creator).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                        HStack(spacing: 6) {
-                            Image(systemName: "text.bubble").foregroundStyle(.cyan)
-                            Text("\\(clip.comments) comments").font(.system(size: 12, weight: .medium))
-                        }.foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.secondary)
-                            .padding(8).background(Color.white.opacity(0.08), in: Circle())
-                    }.buttonStyle(.plain)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .onAppear {
-                    if let url = URL(string: clip.videoURL) {
-                        previewPlayer.replaceCurrentItem(with: AVPlayerItem(url: url))
-                        previewPlayer.isMuted = true
-                        previewPlayer.play()
-                    }
-                    Task { await loadComments() }
-                }
-                .onDisappear { previewPlayer.pause() }
-
-                Divider().overlay(Color.white.opacity(0.08))
 
                 ScrollView {
                     LazyVStack(spacing: 2) {
