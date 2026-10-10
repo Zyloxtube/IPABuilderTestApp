@@ -416,7 +416,11 @@ struct LoopFeedView: View {
                             onComments: { showComments = true },
                             onShare: { showShare = true },
                             onProfile: { selectedProfileClip = clip },
-                            onSong: { selectedSongClip = clip }
+                            onSong: { selectedSongClip = clip },
+                            onFollow: {
+                                let username = clip.handle.hasPrefix("@") ? String(clip.handle.dropFirst()) : clip.handle
+                                Task { do { try await LerizAPI.follow(username: username) } catch { await MainActor.run { feedError = "Follow failed: \(error.localizedDescription)" } } }
+                            }
                         )
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .rotationEffect(.degrees(-90))
@@ -604,6 +608,7 @@ struct ClipPage: View {
     let onShare: () -> Void
     let onProfile: () -> Void
     let onSong: () -> Void
+    let onFollow: () -> Void
     @State private var player = AVPlayer()
     @State private var isPlaying = true
     @State private var videoFailed = false
@@ -659,6 +664,7 @@ struct ClipPage: View {
                             Text("·").foregroundStyle(.white.opacity(0.6))
                             Button {
                                 withAnimation(.spring(response: 0.28, dampingFraction: 0.62)) { isFollowing.toggle() }
+                                onFollow()
                             } label: {
                                 Text(isFollowing ? "Following" : "Follow")
                                     .font(.system(size: 13, weight: .bold))
@@ -692,6 +698,7 @@ struct ClipPage: View {
                             if !isFollowing {
                                 Button {
                                     withAnimation(.spring(response: 0.28, dampingFraction: 0.58)) { isFollowing = true }
+                                    onFollow()
                                 } label: {
                                     ZStack {
                                         Circle().fill(Color.pink).frame(width: 21, height: 21)
@@ -1771,8 +1778,11 @@ struct VideoEditorView: View {
         exporter.outputURL = output
         exporter.outputFileType = .mp4
         exporter.videoComposition = instruction
-        await exporter.export()
-        return exporter.status == .completed ? output : nil
+        await withCheckedContinuation { continuation in
+            exporter.exportAsynchronously {
+                continuation.resume(returning: exporter.status == .completed ? output : nil)
+            }
+        }
     }
 
     private func colorButton(_ color: Color) -> some View {
