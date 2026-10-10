@@ -128,10 +128,12 @@ struct LerizAPI {
         let (data, _) = try await request("api/comments/\(encodedID)/like", method: "POST", body: Data("{}".utf8))
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
     }
-    static func follow(username: String) async throws {
+    @discardableResult
+    static func follow(username: String) async throws -> [String: Any] {
         let safeUsername = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
         let body = try JSONSerialization.data(withJSONObject: ["username": username])
-        _ = try await request("api/users/\(safeUsername)/follow", method: "POST", body: body)
+        let (data, _) = try await request("api/users/\(safeUsername)/follow", method: "POST", body: body)
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
     }
 
     static func saveProfile(displayName: String, username: String, bio: String) async throws -> [String: Any] {
@@ -813,6 +815,7 @@ struct ClipPage: View {
     @State private var videoFailed = false
     @State private var isFollowing = false
     @AppStorage("lerizUsername") private var currentUsername = ""
+    @AppStorage("lerizFollowedHandles") private var followedHandlesJSON = "[]"
     @State private var isMuted = false
     @State private var tappedHashtag = ""
     @State private var showHashtagPage = false
@@ -875,7 +878,7 @@ struct ClipPage: View {
             VStack {
                 Spacer()
                 HStack(alignment: .bottom, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 11) {
+                    VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
                             Button(action: onProfile) {
                                 LerizAvatarView(urlString: clip.avatarURL, size: 38, fallbackColor: clip.accent)
@@ -892,11 +895,15 @@ struct ClipPage: View {
                             if clip.handle.trimmingCharacters(in: CharacterSet(charactersIn: "@")).caseInsensitiveCompare(currentUsername) != .orderedSame {
                                 Button {
                                     withAnimation(.spring(response: 0.28, dampingFraction: 0.62)) { isFollowing.toggle() }
+                                    persistFollowingState(isFollowing)
                                     onFollow()
                                 } label: {
                                     Text(isFollowing ? "Following" : "Follow")
                                         .font(.system(size: 13, weight: .bold))
-                                        .foregroundStyle(isFollowing ? .white.opacity(0.8) : .cyan)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 11)
+                                        .padding(.vertical, 6)
+                                        .background(isFollowing ? Color.white.opacity(0.16) : Color.cyan.opacity(0.78), in: Capsule())
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -925,37 +932,11 @@ struct ClipPage: View {
                             Text(clip.song).lineLimit(1)
                         }
                         .font(.system(size: 11, weight: .medium))
-                        .padding(.top, 2)
+                        .padding(.top, 0)
                     }
                     .foregroundStyle(.white)
                     Spacer(minLength: 0)
                     VStack(spacing: 20) {
-                        ZStack(alignment: .bottom) {
-                            Button(action: onProfile) {
-                                LerizAvatarView(urlString: clip.avatarURL, size: 46, fallbackColor: clip.accent)
-                            }
-                            .buttonStyle(.plain)
-                            if !isFollowing && clip.handle.trimmingCharacters(in: CharacterSet(charactersIn: "@")).caseInsensitiveCompare(currentUsername) != .orderedSame {
-                                Button {
-                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.58)) { isFollowing = true }
-                                    onFollow()
-                                } label: {
-                                    ZStack {
-                                        Circle().fill(Color.pink).frame(width: 21, height: 21)
-                                        Image(systemName: "plus")
-                                            .font(.system(size: 11, weight: .black))
-                                            .foregroundStyle(.white)
-                                    }
-                                    .overlay(Circle().stroke(Color.black.opacity(0.75), lineWidth: 1.5))
-                                    .scaleEffect(isFollowing ? 0.2 : 1)
-                                    .opacity(isFollowing ? 0 : 1)
-                                }
-                                .buttonStyle(.plain)
-                                .offset(y: 8)
-                                .transition(.scale(scale: 0.35, anchor: .center).combined(with: .opacity))
-                                .accessibilityLabel("Follow creator")
-                            }
-                        }
                         actionButton(isLiked ? "heart.fill" : "heart", value: clip.likes, color: .white, gradient: isLiked, action: onLike)
                         actionButton("text.bubble", value: clip.comments, color: .white, action: onComments)
                         actionButton(isSaved ? "bookmark.fill" : "bookmark", value: isSaved ? "Saved" : "Save", color: isSaved ? Color(red: 1, green: 0.78, blue: 0.16) : .white, action: onSave)
@@ -991,8 +972,24 @@ struct ClipPage: View {
             }
         }
         .background(Color.black)
-        .onAppear { if isActive { player.play() } }
+        .onAppear {
+            if isActive { player.play() }
+            syncFollowingState()
+        }
         .sheet(isPresented: $showHashtagPage) { HashtagVideosSheet(tag: tappedHashtag) }
+    }
+
+    private func syncFollowingState() {
+        let handles = (try? JSONDecoder().decode([String].self, from: Data(followedHandlesJSON.utf8))) ?? []
+        let username = clip.handle.trimmingCharacters(in: CharacterSet(charactersIn: "@")).lowercased()
+        isFollowing = handles.contains { $0.lowercased() == username }
+    }
+
+    private func persistFollowingState(_ following: Bool) {
+        let username = clip.handle.trimmingCharacters(in: CharacterSet(charactersIn: "@")).lowercased()
+        var handles = Set((try? JSONDecoder().decode([String].self, from: Data(followedHandlesJSON.utf8))) ?? [])
+        if following { handles.insert(username) } else { handles.remove(username) }
+        followedHandlesJSON = String(data: (try? JSONEncoder().encode(Array(handles).sorted())) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
     }
 
     private func actionButton(_ symbol: String, value: String, color: Color, gradient: Bool = false, action: @escaping () -> Void) -> some View {
@@ -1269,9 +1266,9 @@ struct CommentsSheet: View {
                         .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 14)
-                    .padding(.top, 12)
-                    .padding(.bottom, 28)
-                    .background(.ultraThinMaterial)
+                    .padding(.top, 10)
+                    .padding(.bottom, 0)
+                    .background(.ultraThinMaterial.ignoresSafeArea(edges: .bottom))
                 }
             }
             .background(Color(uiColor: .systemBackground))
@@ -1827,6 +1824,7 @@ struct ProfileSheet: View {
     @State private var showNotifications = false
     @State private var showSavedVideos = false
     @State private var selectedAvatar: PhotosPickerItem?
+    @State private var showAvatarPreview = false
     @State private var profileUser: [String: Any] = [:]
     @State private var profileVideos: [FeedClip] = []
     @State private var profileLoading = true
@@ -1838,6 +1836,7 @@ struct ProfileSheet: View {
     @AppStorage("lerizProfileImageData") private var profileImageData = ""
     @AppStorage("lerizAuthToken") private var authToken = ""
     @AppStorage("lerizUsername") private var currentUsername = ""
+    @AppStorage("lerizFollowedHandles") private var followedHandlesJSON = "[]"
     @AppStorage("lerizDisplayName") private var displayName = ""
     @AppStorage("lerizBio") private var profileBio = "Capture your world, your way."
     var body: some View {
@@ -1845,21 +1844,29 @@ struct ProfileSheet: View {
             ScrollView {
                 VStack(spacing: 18) {
                     HStack(spacing: 16) {
-                        PhotosPicker(selection: $selectedAvatar, matching: .images) {
-                            Group {
-                                if clip != nil {
-                                    LerizAvatarView(urlString: profileUser["avatarURL"] as? String ?? "", size: 88, fallbackColor: .purple)
-                                } else if let data = Data(base64Encoded: profileImageData), let image = UIImage(data: data) {
-                                    Image(uiImage: image).resizable().scaledToFill()
-                                } else {
-                                    Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                        .overlay(Image(systemName: "person.crop.circle.fill").font(.system(size: 40)).foregroundStyle(.white))
+                        Group {
+                            if clip != nil {
+                                Button { showAvatarPreview = true } label: {
+                                    LerizAvatarView(urlString: profileUser["avatarURL"] as? String ?? clip?.avatarURL ?? "", size: 88, fallbackColor: .purple)
                                 }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("View profile picture")
+                            } else {
+                                PhotosPicker(selection: $selectedAvatar, matching: .images) {
+                                    Group {
+                                        if let data = Data(base64Encoded: profileImageData), let image = UIImage(data: data) {
+                                            Image(uiImage: image).resizable().scaledToFill()
+                                        } else {
+                                            Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                                .overlay(Image(systemName: "person.crop.circle.fill").font(.system(size: 40)).foregroundStyle(.white))
+                                        }
+                                    }
+                                    .frame(width: 88, height: 88).clipShape(Circle())
+                                    .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .frame(width: 88, height: 88).clipShape(Circle())
-                            .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 1))
                         }
-                        .buttonStyle(.plain)
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(spacing: 5) {
                                 Text((profileUser["displayName"] as? String) ?? (clip?.creator ?? (displayName.isEmpty ? (currentUsername.isEmpty ? "Leriz user" : currentUsername) : displayName))).font(.title3.bold())
@@ -1886,13 +1893,31 @@ struct ProfileSheet: View {
                             Button { showEdit = true } label: { Text("Edit profile").font(.system(size: 14, weight: .bold)).frame(maxWidth: .infinity).padding(12).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
                         } else {
                             Button {
+                                let target = (profileUser["username"] as? String) ?? (clip?.handle.replacingOccurrences(of: "@", with: "") ?? "")
                                 Task {
-                                    do { try await LerizAPI.follow(username: (profileUser["username"] as? String) ?? (clip?.handle.replacingOccurrences(of: "@", with: "") ?? "")) }
-                                    catch { await MainActor.run { profileLoadError = error.localizedDescription } }
+                                    do {
+                                        let result = try await LerizAPI.follow(username: target)
+                                        let followingNow = result["isFollowing"] as? Bool ?? result["following"] as? Bool ?? !(profileUser["isFollowing"] as? Bool ?? false)
+                                        await MainActor.run {
+                                            profileUser["isFollowing"] = followingNow
+                                            var handles = Set((try? JSONDecoder().decode([String].self, from: Data(followedHandlesJSON.utf8))) ?? [])
+                                            if followingNow { handles.insert(target.lowercased()) } else { handles.remove(target.lowercased()) }
+                                            followedHandlesJSON = String(data: (try? JSONEncoder().encode(Array(handles).sorted())) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
+                                        }
+                                    } catch {
+                                        await MainActor.run { profileLoadError = error.localizedDescription }
+                                    }
                                 }
-                            } label: { Text(profileUser["isFollowing"] as? Bool == true ? "Following" : "Follow").font(.system(size: 14, weight: .bold)).frame(maxWidth: .infinity).padding(12).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
+                            } label: {
+                                Text(profileUser["isFollowing"] as? Bool == true ? "Following" : "Follow")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(12)
+                                    .background(profileUser["isFollowing"] as? Bool == true ? Color.white.opacity(0.15) : Color.cyan.opacity(0.78), in: RoundedRectangle(cornerRadius: 9))
+                            }
+                            .buttonStyle(.plain)
                         }
-                        Button {} label: { Image(systemName: "person.badge.plus").frame(width: 46, height: 42).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
                     }.padding(.horizontal, 18)
                     Text((profileUser["bio"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? profileBio).font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
                     HStack(spacing: 0) {
@@ -1964,6 +1989,33 @@ struct ProfileSheet: View {
             }
             .fullScreenCover(item: $selectedAccountProfile) { person in ProfileSheet(clip: person) }
             .fullScreenCover(item: $selectedProfileVideo) { video in ProfileVideoPlayerSheet(clip: video) }
+            .fullScreenCover(isPresented: $showAvatarPreview) {
+                GeometryReader { geometry in
+                    ZStack {
+                        Color.black.opacity(0.96).ignoresSafeArea()
+                            .contentShape(Rectangle())
+                            .onTapGesture { showAvatarPreview = false }
+                        if let url = profileAvatarPreviewURL {
+                            AsyncImage(url: url) { phase in
+                                if let image = phase.image {
+                                    image.resizable().scaledToFill()
+                                } else if phase.error != nil {
+                                    Color.black
+                                } else {
+                                    ProgressView().tint(.white)
+                                }
+                            }
+                            .frame(width: geometry.size.width, height: geometry.size.width)
+                            .clipped()
+                            .overlay(Rectangle().stroke(Color.white.opacity(0.08), lineWidth: 1))
+                            .onTapGesture {}
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black)
+                }
+                .preferredColorScheme(.dark)
+            }
             .task { await loadProfile() }
             .alert("Account action failed", isPresented: Binding(get: { !showDeleteError.isEmpty }, set: { if !$0 { showDeleteError = "" } })) {
                 Button("OK", role: .cancel) { showDeleteError = "" }
@@ -1986,6 +2038,15 @@ struct ProfileSheet: View {
         }.preferredColorScheme(.dark)
     }
 
+    private var profileAvatarPreviewURL: URL? {
+        let raw = (profileUser["avatarURL"] as? String) ?? clip?.avatarURL ?? ""
+        guard !raw.isEmpty else { return nil }
+        let absolute = (raw.hasPrefix("http://") || raw.hasPrefix("https://"))
+            ? raw
+            : LerizAPI.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + (raw.hasPrefix("/") ? raw : "/\(raw)")
+        return URL(string: absolute)
+    }
+
     @MainActor
     private func loadProfile() async {
         let username = (clip?.handle.replacingOccurrences(of: "@", with: "") ?? currentUsername).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1995,6 +2056,12 @@ struct ProfileSheet: View {
             let (data, _) = try await LerizAPI.request("api/users/\(safe)")
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
             profileUser = json["user"] as? [String: Any] ?? [:]
+            if let handle = profileUser["username"] as? String {
+                var handles = Set((try? JSONDecoder().decode([String].self, from: Data(followedHandlesJSON.utf8))) ?? [])
+                if profileUser["isFollowing"] as? Bool == true { handles.insert(handle.lowercased()) }
+                else { handles.remove(handle.lowercased()) }
+                followedHandlesJSON = String(data: (try? JSONEncoder().encode(Array(handles).sorted())) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
+            }
             let rows = json["videos"] as? [[String: Any]] ?? []
             profileVideos = rows.compactMap { row in
                 guard let id = row["id"] as? String else { return nil }
