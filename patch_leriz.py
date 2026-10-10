@@ -582,6 +582,11 @@ comments_body = r'''    var body: some View {
     }
 
 '''
+comments_body = comments_body.replace("dismiss()", "onDismiss()")
+comments_body = comments_body.replace("                    Color.black\n                    PlayerSurface(player: previewPlayer)", "                    Color.clear\n                    PlayerSurface(player: previewPlayer)")
+comments_body = comments_body.replace("            .background(Color.black)\n            .ignoresSafeArea(.container, edges: .all)", "            .background(Color.clear)\n            .ignoresSafeArea(.container, edges: .all)")
+comments_body = comments_body.replace("        .background(Color.black.ignoresSafeArea())", "        .background(Color.clear.ignoresSafeArea())")
+
 s = s[:comments_start] + comments_body + s[comments_end:]
 
 # Recording setup must be idempotent; avoid duplicate inputs/outputs and ensure configuration is committed once.
