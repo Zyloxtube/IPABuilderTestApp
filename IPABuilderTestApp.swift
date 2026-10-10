@@ -1049,32 +1049,47 @@ struct CommentsSheet: View {
     @State private var replyToID: String? = nil
     @State private var replyToAuthor = ""
     @FocusState private var commentFieldFocused: Bool
-    @GestureState private var dragTranslation: CGFloat = 0
+    @State private var sheetHeight: CGFloat = UIScreen.main.bounds.height * 0.56
+    @State private var dragTranslation: CGFloat = 0
+    @State private var selectedCommentProfile: FeedClip? = nil
+    @State private var commentAvatarURLs: [String] = []
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                HStack(spacing: 10) {
-                    Capsule().fill(.white.opacity(0.38)).frame(width: 34, height: 4)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Comments").font(.system(size: 15, weight: .bold))
-                        Text(clip.creator).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.62)).lineLimit(1)
+                VStack(spacing: 9) {
+                    Capsule().fill(.white.opacity(0.40)).frame(width: 38, height: 4)
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Comments").font(.system(size: 17, weight: .bold))
+                            Text(clip.creator).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.62)).lineLimit(1)
+                        }
+                        Spacer()
+                        Button { onDismiss() } label: {
+                            Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                                .padding(9).background(Color.white.opacity(0.10), in: Circle())
+                        }.buttonStyle(.plain)
                     }
-                    Spacer()
-                    Button { onDismiss() } label: {
-                        Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
-                            .padding(9).background(Color.white.opacity(0.10), in: Circle())
-                    }.buttonStyle(.plain)
                 }
                 .padding(.horizontal, 17)
-                .frame(height: 48)
+                .padding(.top, 10)
+                .padding(.bottom, 10)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 8).updating($dragTranslation) { value, state, _ in
-                    if value.translation.height > 0 { state = value.translation.height }
-                }.onEnded { value in
-                    if value.translation.height > UIScreen.main.bounds.height * 0.12 { onDismiss() }
-                })
+                .gesture(DragGesture(minimumDistance: 4)
+                    .onChanged { value in dragTranslation = max(0, value.translation.height) }
+                    .onEnded { value in
+                        let threshold = UIScreen.main.bounds.height * 0.20
+                        if value.translation.height >= threshold {
+                            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) { onDismiss() }
+                        } else {
+                            let proposed = sheetHeight - value.translation.height
+                            withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.88)) {
+                                sheetHeight = min(UIScreen.main.bounds.height * 0.94, max(UIScreen.main.bounds.height * 0.38, proposed))
+                                dragTranslation = 0
+                            }
+                        }
+                    })
                 .onAppear { Task { await loadComments() } }
 
                 Divider().overlay(Color.white.opacity(0.08))
@@ -1093,9 +1108,12 @@ struct CommentsSheet: View {
                             let author = index < commentAuthors.count ? commentAuthors[index] : "user"
                             let isOwnComment = !currentUsername.isEmpty && author.caseInsensitiveCompare(currentUsername) == .orderedSame
                             HStack(alignment: .top, spacing: 11) {
-                                Circle().fill(LinearGradient(colors: [.purple, .pink, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    .frame(width: 38, height: 38)
-                                    .overlay(Image(systemName: "person").font(.system(size: 15)).foregroundStyle(.white))
+                                Button {
+                                    let handle = author.trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+                                    selectedCommentProfile = FeedClip(id: abs(handle.hashValue % 2_000_000_000), creator: author, handle: "@\(handle)", caption: "", tags: "", song: "", likes: "0", comments: "0", views: 0, accent: .purple, videoURL: "", symbol: "person", avatarURL: index < commentAvatarURLs.count ? commentAvatarURLs[index] : "")
+                                } label: {
+                                    LerizAvatarView(urlString: index < commentAvatarURLs.count ? commentAvatarURLs[index] : "", size: 43, fallbackColor: .purple)
+                                }.buttonStyle(.plain)
                                 VStack(alignment: .leading, spacing: 5) {
                                     HStack(spacing: 5) {
                                         Text(author)
@@ -1207,9 +1225,7 @@ struct CommentsSheet: View {
                     .background(.ultraThinMaterial)
                 } else {
                     HStack(spacing: 10) {
-                        Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 35, height: 35)
-                            .overlay(Image(systemName: "person").font(.system(size: 14)).foregroundStyle(.white))
+                        LerizAvatarView(urlString: "", size: 46, fallbackColor: .purple)
                         HStack(spacing: 8) {
                             TextField("Add a comment…", text: $comment, axis: .vertical)
                                 .font(.system(size: 14))
@@ -1226,20 +1242,22 @@ struct CommentsSheet: View {
                                 .buttonStyle(.plain)
                             }
                         }
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 9)
-                        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 22))
+                        .padding(.horizontal, 15)
+                        .padding(.vertical, 12)
+                        .frame(minHeight: 54)
+                        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 25))
                         Menu {
                             ForEach(["😀","😂","🥹","😍","🔥","❤️","😭","👏","✨","🙏","💀","🥰"], id: \.self) { emoji in
                                 Button(emoji) { comment.append(emoji) }
                             }
                         } label: {
-                            Image(systemName: "face.smiling").font(.system(size: 21)).foregroundStyle(.white.opacity(0.8))
+                            Image(systemName: "face.smiling").font(.system(size: 28, weight: .medium)).foregroundStyle(.white.opacity(0.9)).frame(width: 42, height: 48).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
+                    .padding(.top, 12)
+                    .padding(.bottom, 28)
                     .background(.ultraThinMaterial)
                 }
             }
@@ -1260,12 +1278,12 @@ struct CommentsSheet: View {
             Text("This comment and its replies will be deleted.")
         }
         .preferredColorScheme(.dark)
-        .frame(height: UIScreen.main.bounds.height * 0.5, alignment: .top)
+        .frame(height: max(UIScreen.main.bounds.height * 0.38, sheetHeight - dragTranslation), alignment: .top)
         .frame(maxWidth: .infinity, alignment: .top)
-        .offset(y: max(0, dragTranslation))
         .background(Color(uiColor: .systemBackground).ignoresSafeArea())
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
         .ignoresSafeArea(edges: .bottom)
+        .fullScreenCover(item: $selectedCommentProfile) { person in ProfileSheet(clip: person) }
         .onAppear {
             let saved = (try? JSONDecoder().decode([String].self, from: Data(likedCommentIDsJSON.utf8))) ?? []
             likedComments = Set(saved)
@@ -1303,6 +1321,10 @@ struct CommentsSheet: View {
                 commentAuthors = rows.map { row in
                     let user = row["user"] as? [String: Any] ?? [:]
                     return user["username"] as? String ?? row["username"] as? String ?? "user"
+                }
+                commentAvatarURLs = rows.map { row in
+                    let user = row["user"] as? [String: Any] ?? [:]
+                    return user["avatarURL"] as? String ?? user["avatar_url"] as? String ?? ""
                 }
                 commentParentIDs = rows.map { row in
                     let value = row["parentID"] ?? row["parentId"]
@@ -1361,6 +1383,7 @@ struct CommentsSheet: View {
                 posted = kept.map { posted[$0] }
                 commentIDs = kept.compactMap { $0 < commentIDs.count ? commentIDs[$0] : nil }
                 commentAuthors = kept.compactMap { $0 < commentAuthors.count ? commentAuthors[$0] : nil }
+                commentAvatarURLs = kept.compactMap { $0 < commentAvatarURLs.count ? commentAvatarURLs[$0] : nil }
                 commentParentIDs = kept.map { $0 < commentParentIDs.count ? commentParentIDs[$0] : nil }
                 commentEdited = kept.map { $0 < commentEdited.count ? commentEdited[$0] : false }
                 likedComments.subtract(removedIDs)
@@ -1397,6 +1420,7 @@ struct CommentsSheet: View {
                     posted.insert(displayedText, at: safeIndex)
                     commentIDs.insert(newID, at: min(insertionIndex, commentIDs.count))
                     commentAuthors.insert(currentUsername.isEmpty ? "user" : currentUsername, at: min(insertionIndex, commentAuthors.count))
+                    commentAvatarURLs.insert("", at: min(insertionIndex, commentAvatarURLs.count))
                     commentParentIDs.insert(actualParent, at: min(insertionIndex, commentParentIDs.count))
                     commentEdited.insert(false, at: min(insertionIndex, commentEdited.count))
                     comment = ""
