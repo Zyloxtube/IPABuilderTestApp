@@ -617,13 +617,14 @@ struct LoopFeedView: View {
         }
         .task { await loadFeed() }
         .onChange(of: selectedTab) { value in Task { await loadFeed(mode: value == "Following" ? "following" : "forYou") } }
-        .overlay {
+        .overlay(alignment: .bottom) {
             if showComments && !clips.isEmpty {
                 CommentsSheet(
                     clip: clips[selectedClip],
                     onDismiss: { withAnimation(.spring(response: 0.30, dampingFraction: 0.90)) { showComments = false } },
                     sheetHeight: $commentsSheetHeight
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 .transition(.move(edge: .bottom))
                 .zIndex(100)
             }
@@ -1158,26 +1159,29 @@ struct CommentsSheet: View {
                 .padding(.bottom, 10)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 3)
+                .highPriorityGesture(DragGesture(minimumDistance: 1, coordinateSpace: .local)
                     .onChanged { value in
                         if !isDraggingSheet {
                             dragStartHeight = sheetHeight
                             isDraggingSheet = true
                         }
                         let screenHeight = UIScreen.main.bounds.height
-                        sheetHeight = min(screenHeight * 0.98, max(screenHeight * 0.40, dragStartHeight - value.translation.height))
+                        let nextHeight = min(screenHeight * 0.98, max(screenHeight * 0.40, dragStartHeight - value.translation.height))
+                        // Follow the finger without implicit animations; animating each frame causes visible lag.
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) { sheetHeight = nextHeight }
                     }
                     .onEnded { value in
                         let screenHeight = UIScreen.main.bounds.height
                         let proposed = dragStartHeight - value.translation.height
                         isDraggingSheet = false
                         if value.translation.height > 0 && proposed <= screenHeight * 0.50 {
-                            withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.92)) { onDismiss() }
+                            onDismiss()
                             return
                         }
-                        // Two visible detents: half height and full height. A drag reaching 75% snaps open fully.
                         let target = proposed >= screenHeight * 0.75 ? screenHeight * 0.98 : screenHeight * 0.50
-                        withAnimation(.interactiveSpring(response: 0.30, dampingFraction: 0.90)) { sheetHeight = target }
+                        withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) { sheetHeight = target }
                     })
                 .onAppear { Task { await loadComments(); await loadMyAvatar() } }
 
@@ -1355,7 +1359,7 @@ struct CommentsSheet: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.top, 10)
-                    .padding(.bottom, 0)
+                    .padding(.bottom, 10)
                     .background { Rectangle().fill(.ultraThinMaterial).ignoresSafeArea(edges: .bottom) }
                 }
             }
@@ -1380,7 +1384,6 @@ struct CommentsSheet: View {
         .frame(maxWidth: .infinity, alignment: .top)
         .background(Color(uiColor: .systemBackground).ignoresSafeArea())
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
-        .ignoresSafeArea(edges: .bottom)
         .fullScreenCover(item: $selectedCommentProfile) { person in ProfileSheet(clip: person) }
         .onAppear {
             let saved = (try? JSONDecoder().decode([String].self, from: Data(likedCommentIDsJSON.utf8))) ?? []
