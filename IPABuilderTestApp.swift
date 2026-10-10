@@ -184,6 +184,7 @@ struct LerizAvatarView: View {
     let urlString: String
     let size: CGFloat
     let fallbackColor: Color
+    @State private var cacheBuster = UUID().uuidString
 
     var body: some View {
         Group {
@@ -222,7 +223,7 @@ struct LerizAvatarView: View {
         guard var components = URLComponents(string: absolute) else { return nil }
         // Avatar endpoints may keep the same path after an upload; bypass stale image caches.
         components.queryItems = (components.queryItems ?? []).filter { $0.name != "avatar_refresh" }
-        components.queryItems?.append(URLQueryItem(name: "avatar_refresh", value: String(Int(Date().timeIntervalSince1970))))
+        components.queryItems?.append(URLQueryItem(name: "avatar_refresh", value: cacheBuster))
         return components.url
     }
 }
