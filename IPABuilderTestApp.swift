@@ -68,7 +68,10 @@ struct LerizAPI {
             let caption = row["caption"] as? String ?? ""
             let likes = row["likes"] as? Int ?? 0
             let comments = row["comments"] as? Int ?? 0
-            return FeedClip(id: abs(id.hashValue % 2_000_000_000), creator: display, handle: "@\(username)", caption: caption, tags: "", song: "original audio · \(username)", likes: String(likes), comments: String(comments), views: row["views"] as? Int ?? 0, accent: .purple, videoURL: url, symbol: "person")
+            var clip = FeedClip(id: abs(id.hashValue % 2_000_000_000), creator: display, handle: "@\(username)", caption: caption, tags: "", song: "original audio · \(username)", likes: String(likes), comments: String(comments), views: row["views"] as? Int ?? 0, accent: .purple, videoURL: url, symbol: "person")
+            clip.initiallyLiked = row["likedByMe"] as? Bool ?? false
+            clip.initiallySaved = row["savedByMe"] as? Bool ?? false
+            return clip
         }
     }
 
@@ -130,6 +133,8 @@ struct FeedClip: Identifiable {
     let accent: Color
     let videoURL: String
     let symbol: String
+    var initiallyLiked = false
+    var initiallySaved = false
 
     var serverID: String? {
         guard let url = URL(string: videoURL) else { return nil }
@@ -491,6 +496,8 @@ struct LoopFeedView: View {
         feedLoading = true
         do {
             clips = try await LerizAPI.fetchFeed(mode: mode)
+            likedIDs = Set(clips.filter { $0.initiallyLiked }.map(\.id))
+            savedIDs = Set(clips.filter { $0.initiallySaved }.map(\.id))
             selectedClip = min(selectedClip, max(0, clips.count - 1))
             feedError = ""
         } catch {
@@ -615,7 +622,10 @@ struct LoopFeedView: View {
     }
 
     private func withLikes(_ clip: FeedClip, count: Int) -> FeedClip {
-        FeedClip(id: clip.id, creator: clip.creator, handle: clip.handle, caption: clip.caption, tags: clip.tags, song: clip.song, likes: String(count), comments: clip.comments, views: clip.views, accent: clip.accent, videoURL: clip.videoURL, symbol: clip.symbol)
+        var updated = FeedClip(id: clip.id, creator: clip.creator, handle: clip.handle, caption: clip.caption, tags: clip.tags, song: clip.song, likes: String(count), comments: clip.comments, views: clip.views, accent: clip.accent, videoURL: clip.videoURL, symbol: clip.symbol)
+        updated.initiallyLiked = clip.initiallyLiked
+        updated.initiallySaved = clip.initiallySaved
+        return updated
     }
 
     private func serverID(for id: Int) -> String? {
