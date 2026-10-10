@@ -100,9 +100,17 @@ struct LerizAPI {
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
         return json["comments"] as? [[String: Any]] ?? []
     }
-    static func postComment(videoID: String, text: String) async throws {
-        let body = try JSONSerialization.data(withJSONObject: ["text": text])
+    static func postComment(videoID: String, text: String, parentID: String? = nil) async throws {
+        var payload: [String: Any] = ["text": text]
+        if let parentID, !parentID.isEmpty { payload["parentId"] = parentID }
+        let body = try JSONSerialization.data(withJSONObject: payload)
         _ = try await request("api/videos/\(videoID)/comments", method: "POST", body: body)
+    }
+
+    static func toggleCommentLike(commentID: String) async throws -> [String: Any] {
+        let encodedID = commentID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? commentID
+        let (data, _) = try await request("api/comments/\(encodedID)/like", method: "POST", body: Data("{}".utf8))
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
     }
     static func follow(username: String) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["username": username])
@@ -840,7 +848,7 @@ struct CommentsSheet: View {
     @AppStorage("lerizUsername") private var currentUsername = ""
     @State private var commentError = ""
     @State private var showEmojiPicker = false
-    @State private var likedComments: Set<Int> = []
+    @AppStorage("lerizLikedCommentIDs") private var likedCommentIDsJSON = "[]"\n    @State private var likedComments: Set<String> = []\n    @State private var replyToID: String? = nil\n    @State private var replyToAuthor = ""
     @State private var previewPlayer = AVPlayer()
     @FocusState private var commentFieldFocused: Bool
 
@@ -889,6 +897,7 @@ struct CommentsSheet: View {
                             }.frame(maxWidth: .infinity).padding(.top, 36)
                         }
                         ForEach(Array(posted.enumerated()), id: \.offset) { index, text in
+                            let commentID = index < commentIDs.count ? commentIDs[index] : "local-\(index)"
                             HStack(alignment: .top, spacing: 11) {
                                 Circle().fill(LinearGradient(colors: [.purple, .pink, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                                     .frame(width: 38, height: 38)
@@ -900,25 +909,29 @@ struct CommentsSheet: View {
                                     HStack(spacing: 14) {
                                         Text("2h").font(.caption).foregroundStyle(.secondary)
                                         Button("Reply") {
-                                            let author = index < commentAuthors.count ? commentAuthors[index] : "user"
-                                            comment = "@\(author) "
+                                            replyToID = commentID
+                                            replyToAuthor = index < commentAuthors.count ? commentAuthors[index] : "user"
+                                            comment = "@\(replyToAuthor) "
                                             commentFieldFocused = true
                                         }
-                                            .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                                        .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                                     }.padding(.top, 2)
                                 }
                                 Spacer(minLength: 8)
-                                Button { if likedComments.contains(index) { likedComments.remove(index) } else { likedComments.insert(index) } } label: {
+                                Button {
+                                    Task { await toggleCommentLike(commentID: commentID) }
+                                } label: {
                                     VStack(spacing: 4) {
-                                        Image(systemName: "heart")
+                                        Image(systemName: likedComments.contains(commentID) ? "heart.fill" : "heart")
                                             .font(.system(size: 15))
-                                            .foregroundStyle(likedComments.contains(index) ? AnyShapeStyle(LinearGradient(colors: [.pink, .purple, .orange], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(Color.white.opacity(0.68)))
-                                        Text(likedComments.contains(index) ? "1" : "").font(.system(size: 10)).foregroundStyle(.secondary)
+                                            .foregroundStyle(likedComments.contains(commentID) ? AnyShapeStyle(LinearGradient(colors: [.pink, .purple, .orange], startPoint: .bottomLeading, endPoint: .topTrailing)) : AnyShapeStyle(Color.white.opacity(0.68)))
+                                        Text("").font(.system(size: 10)).foregroundStyle(.secondary)
                                     }
                                 }
                                 .buttonStyle(.plain)
                             }
-                            .padding(.horizontal, 17)
+                            .padding(.leading, index < commentIDs.count && commentIDs[index].hasPrefix("reply:") ? 44 : 17)
+                            .padding(.trailing, 17)
                             .padding(.vertical, 13)
                         }
                     }
@@ -970,6 +983,28 @@ struct CommentsSheet: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
+        .onAppear {
+            let saved = (try? JSONDecoder().decode([String].self, from: Data(likedCommentIDsJSON.utf8))) ?? []
+            likedComments = Set(saved)
+        }
+    }
+
+    private func toggleCommentLike(commentID: String) async {
+        let wasLiked = likedComments.contains(commentID)
+        await MainActor.run {
+            if wasLiked { likedComments.remove(commentID) } else { likedComments.insert(commentID) }
+            likedCommentIDsJSON = String(data: (try? JSONEncoder().encode(Array(likedComments))) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
+        }
+        guard !commentID.hasPrefix("local-"), !commentID.hasPrefix("reply:") else { return }
+        do {
+            _ = try await LerizAPI.toggleCommentLike(commentID: commentID)
+        } catch {
+            await MainActor.run {
+                if wasLiked { likedComments.insert(commentID) } else { likedComments.remove(commentID) }
+                likedCommentIDsJSON = String(data: (try? JSONEncoder().encode(Array(likedComments))) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
+                commentError = "Comment like could not sync: \\(error.localizedDescription)"
+            }
+        }
     }
 
     private func loadComments() async {
@@ -978,7 +1013,10 @@ struct CommentsSheet: View {
             let rows = try await LerizAPI.fetchComments(videoID: videoID)
             await MainActor.run {
                 posted = rows.compactMap { $0["text"] as? String }
-                commentIDs = rows.compactMap { $0["id"].map { String(describing: $0) } }
+                commentIDs = rows.enumerated().map { index, row in
+                    if let id = row["id"] { return String(describing: id) }
+                    return "local-\(index)"
+                }
                 commentAuthors = rows.map { row in
                     let user = row["user"] as? [String: Any] ?? [:]
                     return user["username"] as? String ?? row["username"] as? String ?? "user"
@@ -993,10 +1031,20 @@ struct CommentsSheet: View {
     private func postComment() {
         let clean = comment.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, let videoID = clip.serverID else { return }
+        let parentID = replyToID
+        let displayedText = clean
         Task {
             do {
-                try await LerizAPI.postComment(videoID: videoID, text: clean)
-                await MainActor.run { posted.insert(clean, at: 0); commentIDs.insert(UUID().uuidString, at: 0); commentAuthors.insert(currentUsername.isEmpty ? "user" : currentUsername, at: 0); comment = ""; commentFieldFocused = false }
+                try await LerizAPI.postComment(videoID: videoID, text: displayedText, parentID: parentID)
+                await MainActor.run {
+                    posted.insert(displayedText, at: 0)
+                    commentIDs.insert(parentID == nil ? "local-\(UUID().uuidString)" : "reply:\\(UUID().uuidString)", at: 0)
+                    commentAuthors.insert(currentUsername.isEmpty ? "user" : currentUsername, at: 0)
+                    comment = ""
+                    replyToID = nil
+                    replyToAuthor = ""
+                    commentFieldFocused = false
+                }
             } catch {
                 await MainActor.run { commentError = "Comment failed: \(error.localizedDescription)" }
             }
