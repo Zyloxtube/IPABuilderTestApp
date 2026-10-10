@@ -940,19 +940,30 @@ struct ClipPage: View {
                         // Creator poster/profile image with the follow (+) badge, directly above Like.
                         Button(action: onProfile) {
                             LerizAvatarView(urlString: clip.avatarURL, size: 44, fallbackColor: clip.accent)
-                                .overlay(alignment: .bottom) {
-                                    if clip.handle.trimmingCharacters(in: CharacterSet(charactersIn: "@")).caseInsensitiveCompare(currentUsername) != .orderedSame && !isFollowing {
-                                        Image(systemName: "plus")
-                                            .font(.system(size: 10, weight: .black))
-                                            .foregroundStyle(.white)
-                                            .frame(width: 19, height: 19)
-                                            .background(Color.cyan, in: Circle())
-                                            .overlay(Circle().stroke(Color.black, lineWidth: 1.5))
-                                            .offset(y: 8)
-                                    }
-                                }
                         }
                         .buttonStyle(.plain)
+                        .overlay(alignment: .bottom) {
+                            if clip.handle.trimmingCharacters(in: CharacterSet(charactersIn: "@")).caseInsensitiveCompare(currentUsername) != .orderedSame && !isFollowing {
+                                Button {
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.62)) {
+                                        isFollowing = true
+                                    }
+                                    persistFollowingState(true)
+                                    onFollow()
+                                } label: {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 10, weight: .black))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 19, height: 19)
+                                        .background(Color.cyan, in: Circle())
+                                        .overlay(Circle().stroke(Color.black, lineWidth: 1.5))
+                                        .contentShape(Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .offset(y: 8)
+                                .accessibilityLabel("Follow creator")
+                            }
+                        }
                         .padding(.bottom, 5)
                         .accessibilityLabel("Open creator profile")
                         actionButton(isLiked ? "heart.fill" : "heart", value: clip.likes, color: .white, gradient: isLiked, action: onLike)
@@ -1859,32 +1870,39 @@ struct ProfileSheet: View {
     @AppStorage("lerizFollowedHandles") private var followedHandlesJSON = "[]"
     @AppStorage("lerizDisplayName") private var displayName = ""
     @AppStorage("lerizBio") private var profileBio = "Capture your world, your way."
+    private var isOwnProfile: Bool {
+        guard let clip else { return true }
+        let viewedUsername = clip.handle.trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+        return !currentUsername.isEmpty && viewedUsername.caseInsensitiveCompare(currentUsername) == .orderedSame
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
                     HStack(spacing: 16) {
                         Group {
-                            if clip != nil {
-                                Button { showAvatarPreview = true } label: {
-                                    LerizAvatarView(urlString: profileUser["avatarURL"] as? String ?? clip?.avatarURL ?? "", size: 88, fallbackColor: .purple)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("View profile picture")
-                            } else {
+                            if isOwnProfile {
                                 PhotosPicker(selection: $selectedAvatar, matching: .images) {
                                     Group {
                                         if let data = Data(base64Encoded: profileImageData), let image = UIImage(data: data) {
                                             Image(uiImage: image).resizable().scaledToFill()
                                         } else {
-                                            Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                                .overlay(Image(systemName: "person.crop.circle.fill").font(.system(size: 40)).foregroundStyle(.white))
+                                            LerizAvatarView(urlString: profileUser["avatarURL"] as? String ?? clip?.avatarURL ?? "", size: 88, fallbackColor: .purple)
                                         }
                                     }
                                     .frame(width: 88, height: 88).clipShape(Circle())
                                     .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 1))
+                                    .contentShape(Circle())
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Change profile picture")
+                            } else {
+                                Button { showAvatarPreview = true } label: {
+                                    LerizAvatarView(urlString: profileUser["avatarURL"] as? String ?? clip?.avatarURL ?? "", size: 88, fallbackColor: .purple)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("View profile picture")
                             }
                         }
                         VStack(alignment: .leading, spacing: 6) {
