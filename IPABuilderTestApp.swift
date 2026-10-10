@@ -1436,6 +1436,11 @@ struct ProfileSheet: View {
     @State private var showNotifications = false
     @State private var showSavedVideos = false
     @State private var selectedAvatar: PhotosPickerItem?
+    @State private var profileUser: [String: Any] = [:]
+    @State private var profileVideos: [FeedClip] = []
+    @State private var profileLoading = true
+    @State private var profileLoadError = ""
+    @State private var selectedProfileVideo: FeedClip?
     @AppStorage("lerizProfileImageData") private var profileImageData = ""
     @AppStorage("lerizAuthToken") private var authToken = ""
     @AppStorage("lerizUsername") private var currentUsername = ""
@@ -1460,16 +1465,21 @@ struct ProfileSheet: View {
                         }
                         .buttonStyle(.plain)
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(clip?.creator ?? (displayName.isEmpty ? (currentUsername.isEmpty ? "Leriz user" : currentUsername) : displayName)).font(.title3.bold())
-                            Text(clip?.handle ?? "@\(currentUsername.isEmpty ? "user" : currentUsername)").font(.subheadline).foregroundStyle(.secondary)
-                            Text(clip == nil ? "Your creator profile" : "Creator on Leriz").font(.caption).foregroundStyle(.secondary)
+                            HStack(spacing: 5) {
+                                Text((profileUser["displayName"] as? String) ?? (clip?.creator ?? (displayName.isEmpty ? (currentUsername.isEmpty ? "Leriz user" : currentUsername) : displayName))).font(.title3.bold())
+                                if (profileUser["verified"] as? Bool == true) || ["tjadev", "yzndev"].contains(((profileUser["username"] as? String) ?? (clip?.handle ?? "@\(currentUsername)")).replacingOccurrences(of: "@", with: "").lowercased()) {
+                                    Image(systemName: "checkmark.seal.fill").foregroundStyle(.cyan).font(.system(size: 15))
+                                }
+                            }
+                            Text("@\((profileUser["username"] as? String) ?? (clip?.handle.replacingOccurrences(of: "@", with: "") ?? (currentUsername.isEmpty ? "user" : currentUsername)))").font(.subheadline).foregroundStyle(.secondary)
+                            Text((profileUser["bio"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? (clip == nil ? profileBio : "Creator on Leriz")).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                     }.padding(.horizontal, 18).padding(.top, 15)
                     HStack {
-                        stat("0", "Following")
-                        stat("0", "Followers")
-                        stat("0", "Likes")
+                        stat(String(profileUser["following"] as? Int ?? 0), "Following")
+                        stat(String(profileUser["followers"] as? Int ?? 0), "Followers")
+                        stat(String(profileVideos.reduce(0) { $0 + (Int($1.likes) ?? 0) }), "Likes")
                     }
                     HStack(spacing: 10) {
                         Button { showEdit = true } label: { Text("Edit profile").font(.system(size: 14, weight: .bold)).frame(maxWidth: .infinity).padding(12).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
@@ -1481,10 +1491,28 @@ struct ProfileSheet: View {
                         tab("heart", 1)
                     }.padding(.top, 5)
                     Rectangle().fill(.white.opacity(0.12)).frame(height: 0.5)
-                    VStack(spacing: 10) {
-                        Image(systemName: selectedTab == 0 ? "video" : "heart").font(.system(size: 34)).foregroundStyle(.secondary)
-                        Text(selectedTab == 0 ? "Your videos will appear here" : "Videos you like will appear here").font(.subheadline).foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity).padding(.vertical, 60)
+                    if profileLoading {
+                        ProgressView("Loading profile…").frame(maxWidth: .infinity).padding(.vertical, 50)
+                    } else if !profileLoadError.isEmpty {
+                        Text(profileLoadError).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 40)
+                    } else if selectedTab == 0 && !profileVideos.isEmpty {
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3)], spacing: 3) {
+                            ForEach(profileVideos) { video in
+                                Button { selectedProfileVideo = video } label: {
+                                    ZStack(alignment: .bottomLeading) {
+                                        RoundedRectangle(cornerRadius: 5).fill(LinearGradient(colors: [video.accent.opacity(0.65), .black], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        Image(systemName: "play.fill").font(.system(size: 22)).foregroundStyle(.white.opacity(0.85))
+                                        Text(video.caption.isEmpty ? "Video" : video.caption).font(.system(size: 10, weight: .medium)).lineLimit(2).padding(5)
+                                    }.frame(height: 155)
+                                }.buttonStyle(.plain)
+                            }
+                        }.padding(.horizontal, 3)
+                    } else {
+                        VStack(spacing: 10) {
+                            Image(systemName: selectedTab == 0 ? "video" : "heart").font(.system(size: 34)).foregroundStyle(.secondary)
+                            Text(selectedTab == 0 ? "No videos available" : "No liked videos available").font(.subheadline).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity).padding(.vertical, 60)
+                    }
                 }
             }.background(Color.black)
             .navigationTitle("Profile").navigationBarTitleDisplayMode(.inline)
@@ -1521,6 +1549,8 @@ struct ProfileSheet: View {
             .sheet(isPresented: $showEdit) { EditProfileDemo() }
             .sheet(isPresented: $showNotifications) { InboxSheet() }
             .sheet(isPresented: $showSavedVideos) { SavedVideosSheet() }
+            .sheet(item: $selectedProfileVideo) { video in ProfileVideoPlayerSheet(clip: video) }
+            .task { await loadProfile() }
             .alert("Account action failed", isPresented: Binding(get: { !showDeleteError.isEmpty }, set: { if !$0 { showDeleteError = "" } })) {
                 Button("OK", role: .cancel) { showDeleteError = "" }
             } message: { Text(showDeleteError) }
@@ -1541,6 +1571,36 @@ struct ProfileSheet: View {
             }
         }.preferredColorScheme(.dark)
     }
+
+    @MainActor
+    private func loadProfile() async {
+        let username = (clip?.handle.replacingOccurrences(of: "@", with: "") ?? currentUsername).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !username.isEmpty else { profileLoading = false; return }
+        do {
+            let safe = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
+            let (data, _) = try await LerizAPI.request("api/users/\(safe)")
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            profileUser = json["user"] as? [String: Any] ?? [:]
+            let rows = json["videos"] as? [[String: Any]] ?? []
+            profileVideos = rows.compactMap { row in
+                guard let id = row["id"] as? String else { return nil }
+                let user = row["user"] as? [String: Any] ?? [:]
+                let handle = user["username"] as? String ?? username
+                let display = user["displayName"] as? String ?? handle
+                let raw = row["videoURL"] as? String ?? "/api/videos/\(id)/file"
+                let url = URL(string: raw)?.scheme == nil ? LerizAPI.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + (raw.hasPrefix("/") ? raw : "/\(raw)") : raw
+                var video = FeedClip(id: abs(id.hashValue % 2_000_000_000), creator: display, handle: "@\(handle)", caption: row["caption"] as? String ?? "", tags: "", song: "original audio · \(handle)", likes: String(row["likes"] as? Int ?? 0), comments: String(row["comments"] as? Int ?? 0), views: row["views"] as? Int ?? 0, accent: .purple, videoURL: url, symbol: "person")
+                video.initiallyLiked = row["likedByMe"] as? Bool ?? false
+                video.initiallySaved = row["savedByMe"] as? Bool ?? false
+                return video
+            }
+            profileLoadError = ""
+        } catch {
+            profileLoadError = "Could not load profile: \(error.localizedDescription)"
+        }
+        profileLoading = false
+    }
+
     private func stat(_ n: String, _ label: String) -> some View {
         VStack(spacing: 4) { Text(n).font(.system(size: 18, weight: .bold)); Text(label).font(.system(size: 12)).foregroundStyle(.secondary) }.frame(maxWidth: .infinity)
     }
@@ -1549,6 +1609,30 @@ struct ProfileSheet: View {
             VStack(spacing: 10) { Image(systemName: icon).font(.system(size: 18)); Rectangle().fill(selectedTab == index ? Color.white : .clear).frame(height: 2) }
                 .frame(maxWidth: .infinity).foregroundStyle(selectedTab == index ? .white : .secondary)
         }
+    }
+}
+
+struct ProfileVideoPlayerSheet: View {
+    let clip: FeedClip
+    @Environment(\.dismiss) private var dismiss
+    @State private var player = AVPlayer()
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                VideoPlayer(player: player).background(.black)
+                Text(clip.caption).font(.body).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
+            }
+            .background(Color.black)
+            .navigationTitle(clip.handle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { player.pause(); dismiss() } } }
+            .onAppear { if let url = URL(string: clip.videoURL) { player.replaceCurrentItem(with: AVPlayerItem(url: url)); player.play() } }
+            .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { note in
+                guard let ended = note.object as? AVPlayerItem, ended === player.currentItem else { return }
+                player.seek(to: .zero) { _ in player.play() }
+            }
+            .onDisappear { player.pause() }
+        }.preferredColorScheme(.dark)
     }
 }
 
@@ -1965,7 +2049,11 @@ struct HashtagVideosSheet: View {
                 } else if loading {
                     ProgressView("Loading #\(tag)…")
                 } else if videos.isEmpty {
-                    ContentUnavailableView("No videos yet", systemImage: "number", description: Text("Videos tagged #\(tag) will appear here."))
+                    VStack(spacing: 10) {
+                        Image(systemName: "number").font(.system(size: 34)).foregroundStyle(.secondary)
+                        Text("No videos yet").font(.headline)
+                        Text("Videos tagged #\(tag) will appear here.").font(.caption).foregroundStyle(.secondary)
+                    }
                 } else {
                     List(videos.indices, id: \.self) { index in
                         let row = videos[index]
@@ -1995,7 +2083,7 @@ struct HashtagVideosSheet: View {
                     let (data, _) = try await LerizAPI.request("api/hashtags/\(safe)")
                     let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
                     videos = json["videos"] as? [[String: Any]] ?? []
-                } catch { error = error.localizedDescription }
+                } catch let requestError { self.error = requestError.localizedDescription }
                 loading = false
             }
         }.preferredColorScheme(.dark)
