@@ -2194,25 +2194,69 @@ struct VideoEditorView: View {
         return AnyShapeStyle(textColor)
     }
 
+    private var previewView: some View {
+        ZStack {
+            VideoPlayer(player: AVPlayer(url: url))
+            if !text.isEmpty {
+                Text(text)
+                    .font(.system(size: 28, weight: .black, design: .rounded))
+                    .foregroundStyle(overlayTextStyle)
+                    .padding(5)
+                    .background(useBorder ? Color.black.opacity(0.48) : .clear, in: RoundedRectangle(cornerRadius: 5))
+                    .overlay {
+                        if useBorder {
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .leading, endPoint: .trailing), lineWidth: 2)
+                        }
+                    }
+                    .opacity(opacity)
+                    .offset(textOffset)
+                    .gesture(DragGesture().onChanged { textOffset = $0.translation })
+            }
+        }
+        .clipShape(Rectangle())
+        .padding(.horizontal, 12)
+    }
+
+    private var textToolsSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Text") {
+                    TextField("Your text", text: $text, axis: .vertical)
+                    Button(role: .destructive) { text = "" } label: { Label("Delete text", systemImage: "trash") }
+                }
+                Section("Color") {
+                    HStack(spacing: 18) {
+                        colorButton(.white)
+                        colorButton(.yellow)
+                        colorButton(.cyan)
+                        colorButton(.pink)
+                        colorButton(.green)
+                    }
+                    Toggle("Gradient text", isOn: $useGradient)
+                    Toggle("Border", isOn: $useBorder)
+                    VStack(alignment: .leading) {
+                        Text("Transparency · \(Int(opacity * 100))%")
+                        Slider(value: $opacity, in: 0...1)
+                    }
+                }
+            }
+            .navigationTitle("Text style")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showTextTools = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .preferredColorScheme(.dark)
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
-                ZStack {
-                    VideoPlayer(player: AVPlayer(url: url))
-                    if !text.isEmpty {
-                        Text(text)
-                            .font(.system(size: 28, weight: .black, design: .rounded))
-                            .foregroundStyle(overlayTextStyle)
-                            .padding(5)
-                            .background(useBorder ? Color.black.opacity(0.48) : .clear, in: RoundedRectangle(cornerRadius: 5))
-                            .overlay { if useBorder { RoundedRectangle(cornerRadius: 5).stroke(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .leading, endPoint: .trailing), lineWidth: 2) } }
-                            .opacity(opacity)
-                            .offset(textOffset)
-                            .gesture(DragGesture().onChanged { textOffset = $0.translation })
-                    }
-                }
-                .clipShape(Rectangle())
-                .padding(.horizontal, 12)
+                previewView
                 TextField("Write a caption…", text: $text, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .padding(.horizontal, 14)
@@ -2220,45 +2264,27 @@ struct VideoEditorView: View {
                     .autocorrectionDisabled()
                     .onChange(of: text) { _ in updateHashtagSuggestions() }
                 hashtagSuggestionsView
-                Text("Drag text on the video to position it").font(.caption).foregroundStyle(.secondary)
+                Text("Drag text on the video to position it")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             }
             .background(Color.black)
-            .navigationTitle("Edit video").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Edit video")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("Back") { dismiss() } }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Back") { dismiss() }
+                }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { showTextTools = true } label: { Image(systemName: "textformat") }
                         .accessibilityLabel("Edit text style")
-                    Button("Post") {
-                        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            onPost("", url)
-                        } else {
-                            Task {
-                                await ensureHashtagsExist(in: text)
-                                if let rendered = await renderTextIntoVideo(text: text, sourceURL: url, color: UIColor(textColor), opacity: opacity, border: useBorder, gradient: useGradient) {
-                                    await MainActor.run { onPost(text, rendered) }
-                                } else {
-                                    await MainActor.run { onPost(text, url) }
-                                }
-                            }
-                        }
-                    }.fontWeight(.bold)
+                    Button("Post", action: postVideo).fontWeight(.bold)
                 }
             }
             .alert("Create #\(pendingHashtag)", isPresented: $showCreateHashtag) {
                 TextField("Description (optional)", text: $hashtagDescription)
-                Button("Create") {
-                    let tag = pendingHashtag
-                    Task {
-                        do {
-                            try await LerizAPI.createHashtag(name: tag, description: hashtagDescription)
-                            await MainActor.run { insertHashtag(tag) }
-                        } catch {
-                            await MainActor.run { pendingHashtag = tag }
-                        }
-                    }
-                }
+                Button("Create", action: createPendingHashtag)
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Create this hashtag and add a description for its page.")
@@ -2267,29 +2293,34 @@ struct VideoEditorView: View {
                 HashtagVideosSheet(tag: pendingHashtag)
             }
             .sheet(isPresented: $showTextTools) {
-                NavigationStack {
-                    Form {
-                        Section("Text") {
-                            TextField("Your text", text: $text, axis: .vertical)
-                            Button(role: .destructive) { text = "" } label: { Label("Delete text", systemImage: "trash") }
-                        }
-                        Section("Color") {
-                            HStack(spacing: 18) {
-                                colorButton(.white); colorButton(.yellow); colorButton(.cyan); colorButton(.pink); colorButton(.green)
-                            }
-                            Toggle("Gradient text", isOn: $useGradient)
-                            Toggle("Border", isOn: $useBorder)
-                            VStack(alignment: .leading) {
-                                Text("Transparency · \(Int(opacity * 100))%")
-                                Slider(value: $opacity, in: 0...1)
-                            }
-                        }
-                    }
-                    .navigationTitle("Text style").navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showTextTools = false } } }
-                }.presentationDetents([.medium, .large]).preferredColorScheme(.dark)
+                textToolsSheet
             }
-        }.preferredColorScheme(.dark)
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func postVideo() {
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            onPost("", url)
+            return
+        }
+        Task {
+            await ensureHashtagsExist(in: text)
+            let rendered = await renderTextIntoVideo(text: text, sourceURL: url, color: UIColor(textColor), opacity: opacity, border: useBorder, gradient: useGradient)
+            await MainActor.run { onPost(text, rendered ?? url) }
+        }
+    }
+
+    private func createPendingHashtag() {
+        let tag = pendingHashtag
+        Task {
+            do {
+                try await LerizAPI.createHashtag(name: tag, description: hashtagDescription)
+                await MainActor.run { insertHashtag(tag) }
+            } catch {
+                await MainActor.run { pendingHashtag = tag }
+            }
+        }
     }
 
     private func ensureHashtagsExist(in caption: String) async {
