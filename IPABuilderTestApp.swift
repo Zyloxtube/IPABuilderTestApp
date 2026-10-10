@@ -414,6 +414,9 @@ struct LoopFeedView: View {
                     Text(feedError.isEmpty ? "Be the first to upload a video." : feedError).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 34)
                     Button { showCreate = true } label: { Label("Upload a video", systemImage: "plus").font(.system(size: 15, weight: .bold)).padding(.horizontal, 20).padding(.vertical, 12).background(.white.opacity(0.12), in: Capsule()) }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .top) { topBar }
+                .overlay(alignment: .bottom) { bottomBar }
             } else {
             GeometryReader { geometry in
                 TabView(selection: $selectedClip) {
