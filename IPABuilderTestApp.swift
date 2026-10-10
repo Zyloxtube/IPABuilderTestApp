@@ -1270,7 +1270,7 @@ struct CommentsSheet: View {
                     .padding(.horizontal, 14)
                     .padding(.top, 10)
                     .padding(.bottom, 0)
-                    .background(.ultraThinMaterial.ignoresSafeArea(edges: .bottom))
+                    .background { Rectangle().fill(.ultraThinMaterial).ignoresSafeArea(edges: .bottom) }
                 }
             }
             .background(Color(uiColor: .systemBackground))
