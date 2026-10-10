@@ -803,16 +803,24 @@ struct ClipPage: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        Text(linkedCaption)
+                        Text(clip.caption)
                             .font(.system(size: 14, weight: .medium))
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
-                            .environment(.openURL, OpenURLAction { url in
-                                guard url.scheme == "leriz", url.host == "hashtag" else { return .systemAction }
-                                tappedHashtag = url.pathComponents.dropFirst().first ?? ""
-                                showHashtagPage = !tappedHashtag.isEmpty
-                                return .handled
-                            })
+                        if !captionHashtags.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 7) {
+                                    ForEach(Array(captionHashtags.enumerated()), id: \.offset) { _, tag in
+                                        Button {
+                                            tappedHashtag = tag
+                                            showHashtagPage = true
+                                        } label: {
+                                            Text("#\(tag)").font(.system(size: 12, weight: .bold)).foregroundStyle(.cyan)
+                                        }.buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
                         Text(clip.tags).font(.system(size: 13, weight: .bold)).foregroundStyle(.white.opacity(0.94))
                         HStack(spacing: 7) {
                             Image(systemName: "music.note")
