@@ -100,11 +100,13 @@ struct LerizAPI {
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
         return json["comments"] as? [[String: Any]] ?? []
     }
-    static func postComment(videoID: String, text: String, parentID: String? = nil) async throws {
+    static func postComment(videoID: String, text: String, parentID: String? = nil) async throws -> [String: Any] {
         var payload: [String: Any] = ["text": text]
-        if let parentID, !parentID.isEmpty { payload["parentId"] = parentID }
+        if let parentID, !parentID.isEmpty, !parentID.hasPrefix("local-"), !parentID.hasPrefix("reply:") { payload["parentId"] = parentID }
         let body = try JSONSerialization.data(withJSONObject: payload)
-        _ = try await request("api/videos/\(videoID)/comments", method: "POST", body: body)
+        let (data, _) = try await request("api/videos/\(videoID)/comments", method: "POST", body: body)
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        return json["comment"] as? [String: Any] ?? json
     }
 
     static func toggleCommentLike(commentID: String) async throws -> [String: Any] {
@@ -739,7 +741,13 @@ struct ClipPage: View {
                                 }
                             }
                             .buttonStyle(.plain)
-                            Text(clip.creator).font(.system(size: 15, weight: .bold))
+                            HStack(spacing: 4) {
+                                Text(clip.creator).font(.system(size: 15, weight: .bold))
+                                let username = clip.handle.hasPrefix("@") ? String(clip.handle.dropFirst()) : clip.handle
+                                if ["tjadev", "yzndev"].contains(username.lowercased()) {
+                                    Image(systemName: "checkmark.seal.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(.cyan)
+                                }
+                            }
                             Text("·").foregroundStyle(.white.opacity(0.6))
                             Button {
                                 withAnimation(.spring(response: 0.28, dampingFraction: 0.62)) { isFollowing.toggle() }
@@ -873,6 +881,7 @@ struct CommentsSheet: View {
     @State private var posted: [String] = []
     @State private var commentIDs: [String] = []
     @State private var commentAuthors: [String] = []
+    @State private var commentParentIDs: [String?] = []
     @AppStorage("lerizUsername") private var currentUsername = ""
     @State private var commentError = ""
     @State private var showEmojiPicker = false
@@ -961,7 +970,7 @@ struct CommentsSheet: View {
                                 }
                                 .buttonStyle(.plain)
                             }
-                            .padding(.leading, index < commentIDs.count && commentIDs[index].hasPrefix("reply:") ? 44 : 17)
+                            .padding(.leading, index < commentParentIDs.count && commentParentIDs[index] != nil ? 48 : 17)
                             .padding(.trailing, 17)
                             .padding(.vertical, 13)
                         }
@@ -1052,6 +1061,10 @@ struct CommentsSheet: View {
                     let user = row["user"] as? [String: Any] ?? [:]
                     return user["username"] as? String ?? row["username"] as? String ?? "user"
                 }
+                commentParentIDs = rows.map { row in
+                    let value = row["parentID"] ?? row["parentId"]
+                    return value as? String
+                }
                 commentError = ""
             }
         } catch {
@@ -1066,18 +1079,21 @@ struct CommentsSheet: View {
         let displayedText = clean
         Task {
             do {
-                try await LerizAPI.postComment(videoID: videoID, text: displayedText, parentID: parentID)
+                let created = try await LerizAPI.postComment(videoID: videoID, text: displayedText, parentID: parentID)
                 await MainActor.run {
-                    let newID = parentID == nil ? "local-\(UUID().uuidString)" : "reply:\(UUID().uuidString)"
+                    let newID = created["id"] as? String ?? (parentID == nil ? "local-\(UUID().uuidString)" : "reply:\(UUID().uuidString)")
+                    let actualParent = (created["parentID"] ?? created["parentId"]) as? String ?? parentID
                     let insertionIndex: Int
                     if let parentID, let parentIndex = commentIDs.firstIndex(of: parentID) {
                         insertionIndex = parentIndex + 1
                     } else {
                         insertionIndex = 0
                     }
-                    posted.insert(displayedText, at: min(insertionIndex, posted.count))
+                    let safeIndex = min(insertionIndex, posted.count)
+                    posted.insert(displayedText, at: safeIndex)
                     commentIDs.insert(newID, at: min(insertionIndex, commentIDs.count))
                     commentAuthors.insert(currentUsername.isEmpty ? "user" : currentUsername, at: min(insertionIndex, commentAuthors.count))
+                    commentParentIDs.insert(actualParent, at: min(insertionIndex, commentParentIDs.count))
                     comment = ""
                     replyToID = nil
                     replyToAuthor = ""
