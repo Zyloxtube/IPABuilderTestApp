@@ -207,6 +207,7 @@ struct LoopFeedView: View {
     @State private var likedIDs: Set<Int> = []
     @State private var savedIDs: Set<Int> = []
     @State private var selectedTab = "For You"
+    @Namespace private var feedTabUnderline
     @State private var showComments = false
     @State private var showSearch = false
     @State private var showProfile = false
@@ -229,7 +230,7 @@ struct LoopFeedView: View {
                             onSave: { toggle(clip.id, in: &savedIDs) },
                             onComments: { showComments = true },
                             onShare: { showShare = true },
-                            onProfile: { selectedProfileClip = clip; showProfile = true }
+                            onProfile: { selectedProfileClip = clip }
                         )
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .rotationEffect(.degrees(-90))
@@ -247,13 +248,18 @@ struct LoopFeedView: View {
             .ignoresSafeArea()
         }
         .sheet(isPresented: $showComments) { CommentsSheet(clip: clips[selectedClip]) }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
-        .sheet(isPresented: $showSearch) { SearchSheet() }
-        .fullScreenCover(isPresented: $showProfile) {
-            if let profileClip = selectedProfileClip {
-                ProfileSheet(clip: profileClip)
-            } else {
-                ProfileSheet()
+        .sheet(isPresented: $showSearch) {
+            SearchSheet(clips: clips) { chosenClip in
+                if let index = clips.firstIndex(where: { $0.id == chosenClip.id }) {
+                    selectedClip = index
+                }
             }
+        }
+        .fullScreenCover(item: $selectedProfileClip) { profileClip in
+            ProfileSheet(clip: profileClip)
+        }
+        .fullScreenCover(isPresented: $showProfile) {
+            ProfileSheet()
         }
         .fullScreenCover(isPresented: $showCreate) { CreateVideoPage { caption, recordedURL in
             let clip = FeedClip(id: (clips.map(\.id).max() ?? 0) + 1, creator: "Your Leriz", handle: "@yourleriz", caption: caption.isEmpty ? "My new Leriz ✨" : caption, tags: "#leriz #newpost", song: "original audio · yourloop", likes: "0", comments: "0", accent: .purple, videoURL: recordedURL.absoluteString, symbol: "person")
@@ -266,7 +272,7 @@ struct LoopFeedView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 17) {
+        HStack(spacing: 15) {
             HStack(spacing: 5) {
                 Image(systemName: "infinity")
                     .font(.system(size: 25, weight: .regular))
@@ -275,28 +281,44 @@ struct LoopFeedView: View {
                     .font(.system(size: 25, weight: .black, design: .rounded))
                     .tracking(-1.2)
             }
-            Spacer()
-            Button { selectedTab = "Following" } label: {
-                Text("Following")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(selectedTab == "Following" ? .white : .white.opacity(0.62))
-            }
-            Button { selectedTab = "For You" } label: {
-                VStack(spacing: 5) {
-                    Text("For You")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
-                    Capsule().fill(Color.cyan).frame(width: 28, height: 3).opacity(selectedTab == "For You" ? 1 : 0)
-                }
-            }
+            Spacer(minLength: 2)
+            feedTabButton("Following")
+            feedTabButton("For You")
             Button { showSearch = true } label: {
                 Image(systemName: "magnifyingglass").font(.system(size: 20, weight: .regular)).foregroundStyle(.white)
             }
+            .accessibilityLabel("Search videos")
         }
         .padding(.horizontal, 18)
         .padding(.top, 54)
         .padding(.bottom, 15)
         .background(LinearGradient(colors: [.black.opacity(0.62), .clear], startPoint: .top, endPoint: .bottom))
+    }
+
+    private func feedTabButton(_ title: String) -> some View {
+        let selected = selectedTab == title
+        return Button {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.76)) {
+                selectedTab = title
+            }
+        } label: {
+            VStack(spacing: 5) {
+                Text(title)
+                    .font(.system(size: 14, weight: selected ? .bold : .semibold))
+                    .foregroundStyle(selected ? .white : .white.opacity(0.68))
+                    .offset(y: selected ? -2 : 2)
+                ZStack {
+                    Capsule().fill(Color.clear).frame(width: 28, height: 3)
+                    if selected {
+                        Capsule().fill(Color.cyan).frame(width: 28, height: 3)
+                            .matchedGeometryEffect(id: "feed-tab-underline", in: feedTabUnderline)
+                    }
+                }
+            }
+            .frame(minHeight: 25)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var bottomBar: some View {
@@ -371,7 +393,7 @@ struct ClipPage: View {
                     .onDisappear { player.pause() }
                     .onTapGesture {
                         if isPlaying { player.pause() } else { player.play() }
-                        isPlaying.toggle()
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) { isPlaying.toggle() }
                     }
             }
             LinearGradient(colors: [.black.opacity(0.22), .clear, .clear, .black.opacity(0.88)], startPoint: .top, endPoint: .bottom)
@@ -382,13 +404,23 @@ struct ClipPage: View {
                 HStack(alignment: .bottom, spacing: 12) {
                     VStack(alignment: .leading, spacing: 11) {
                         HStack(spacing: 8) {
-                            ZStack {
-                                Circle().fill(clip.accent).frame(width: 38, height: 38)
-                                Image(systemName: clip.symbol).font(.system(size: 17, weight: .bold)).foregroundStyle(.white)
+                            Button(action: onProfile) {
+                                ZStack {
+                                    Circle().fill(clip.accent).frame(width: 38, height: 38)
+                                    Image(systemName: clip.symbol).font(.system(size: 17, weight: .bold)).foregroundStyle(.white)
+                                }
                             }
+                            .buttonStyle(.plain)
                             Text(clip.creator).font(.system(size: 15, weight: .bold))
                             Text("·").foregroundStyle(.white.opacity(0.6))
-                            Button(isFollowing ? "Following" : "Follow") { isFollowing.toggle() }.font(.system(size: 13, weight: .bold)).foregroundStyle(isFollowing ? .white.opacity(0.8) : .cyan)
+                            Button {
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.62)) { isFollowing.toggle() }
+                            } label: {
+                                Text(isFollowing ? "Following" : "Follow")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(isFollowing ? .white.opacity(0.8) : .cyan)
+                            }
+                            .buttonStyle(.plain)
                         }
                         Text(clip.caption)
                             .font(.system(size: 14, weight: .medium))
@@ -405,11 +437,32 @@ struct ClipPage: View {
                     .foregroundStyle(.white)
                     Spacer(minLength: 0)
                     VStack(spacing: 20) {
-                        Button(action: onProfile) {
-                            ZStack(alignment: .bottom) {
-                                Circle().fill(clip.accent).frame(width: 46, height: 46)
-                                Image(systemName: clip.symbol).font(.system(size: 21, weight: .bold)).foregroundStyle(.white).frame(width: 46, height: 46)
-                                Image(systemName: "plus.circle").font(.system(size: 19)).foregroundStyle(.pink).offset(y: 8)
+                        ZStack(alignment: .bottom) {
+                            Button(action: onProfile) {
+                                ZStack {
+                                    Circle().fill(clip.accent).frame(width: 46, height: 46)
+                                    Image(systemName: clip.symbol).font(.system(size: 21, weight: .bold)).foregroundStyle(.white).frame(width: 46, height: 46)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            if !isFollowing {
+                                Button {
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.58)) { isFollowing = true }
+                                } label: {
+                                    ZStack {
+                                        Circle().fill(Color.pink).frame(width: 21, height: 21)
+                                        Image(systemName: "plus")
+                                            .font(.system(size: 11, weight: .black))
+                                            .foregroundStyle(.white)
+                                    }
+                                    .overlay(Circle().stroke(Color.black.opacity(0.75), lineWidth: 1.5))
+                                    .scaleEffect(isFollowing ? 0.2 : 1)
+                                    .opacity(isFollowing ? 0 : 1)
+                                }
+                                .buttonStyle(.plain)
+                                .offset(y: 8)
+                                .transition(.scale(scale: 0.35, anchor: .center).combined(with: .opacity))
+                                .accessibilityLabel("Follow creator")
                             }
                         }
                         actionButton(isLiked ? "heart.fill" : "heart", value: isLiked ? "248.7K" : clip.likes, color: .white, gradient: isLiked, action: onLike)
@@ -432,11 +485,15 @@ struct ClipPage: View {
             }
 
             if !isPlaying {
-                Image(systemName: "play")
-                    .font(.system(size: 30, weight: .bold))
+                Image(systemName: "play.fill")
+                    .font(.system(size: 25, weight: .bold))
                     .foregroundStyle(.white)
-                    .padding(24)
-                    .background(.black.opacity(0.38), in: Circle())
+                    .offset(x: 2)
+                    .frame(width: 76, height: 76)
+                    .background(.black.opacity(0.48), in: Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.10), lineWidth: 1))
+                    .transition(.scale(scale: 0.72).combined(with: .opacity))
+                    .allowsHitTesting(false)
             }
         }
         .background(Color.black)
@@ -610,25 +667,120 @@ struct CommentsSheet: View {
 }
 
 struct SearchSheet: View {
+    @Environment(\.dismiss) private var dismiss
     @State private var query = ""
+    let clips: [FeedClip]
+    let onSelectClip: (FeedClip) -> Void
     let trends = ["#loopchallenge", "#travelcore", "#oddlysatisfying", "#gaming", "#dailyvibes", "#foodtok"]
+
+    private var matchingClips: [FeedClip] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return clips }
+        return clips.filter {
+            $0.creator.localizedCaseInsensitiveContains(term) ||
+            $0.handle.localizedCaseInsensitiveContains(term) ||
+            $0.caption.localizedCaseInsensitiveContains(term) ||
+            $0.tags.localizedCaseInsensitiveContains(term) ||
+            $0.song.localizedCaseInsensitiveContains(term)
+        }
+    }
+
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("Search creators, sounds, tags", text: $query)
-                }.padding(12).background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-                Text("TRENDING NOW").font(.caption.bold()).foregroundStyle(.secondary).tracking(1.5)
-                ForEach(trends.filter { query.isEmpty || $0.localizedCaseInsensitiveContains(query) }, id: \.self) { tag in
-                    HStack { Image(systemName: "chart.line.uptrend.xyaxis").foregroundStyle(.pink); Text(tag).fontWeight(.semibold); Spacer(); Image(systemName: "arrow.up.right").foregroundStyle(.secondary) }
-                    Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("Search videos, creators, sounds, tags", text: $query)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.search)
+                    }
+                    .padding(12)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+
+                    if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        HStack {
+                            Text("VIDEO RESULTS").font(.caption.bold()).foregroundStyle(.secondary).tracking(1.4)
+                            Spacer()
+                            Text("\(matchingClips.count)").font(.caption).foregroundStyle(.secondary)
+                        }
+                        if matchingClips.isEmpty {
+                            VStack(spacing: 10) {
+                                Image(systemName: "video.slash").font(.system(size: 30)).foregroundStyle(.secondary)
+                                Text("No matching videos").font(.headline)
+                                Text("Try a creator name, caption, sound, or hashtag.")
+                                    .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity).padding(.vertical, 35)
+                        } else {
+                            ForEach(matchingClips) { clip in
+                                Button {
+                                    onSelectClip(clip)
+                                    dismiss()
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 10).fill(clip.accent.gradient).frame(width: 74, height: 94)
+                                            Image(systemName: clip.symbol).font(.system(size: 27, weight: .semibold)).foregroundStyle(.white)
+                                            Image(systemName: "play.fill").font(.system(size: 11, weight: .bold))
+                                                .padding(6).background(.black.opacity(0.5), in: Circle())
+                                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing).padding(7)
+                                        }
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            Text(clip.creator).font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
+                                            Text(clip.caption).font(.system(size: 13)).foregroundStyle(.white.opacity(0.82)).lineLimit(2)
+                                            Text("\(clip.handle)  ·  \(clip.tags)").font(.system(size: 11, weight: .medium)).foregroundStyle(.cyan).lineLimit(1)
+                                        }
+                                        Spacer(minLength: 0)
+                                        Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.secondary)
+                                    }
+                                    .padding(9).background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    } else {
+                        Text("TRENDING NOW").font(.caption.bold()).foregroundStyle(.secondary).tracking(1.5)
+                        ForEach(trends, id: \.self) { tag in
+                            Button { query = tag } label: {
+                                HStack {
+                                    Image(systemName: "chart.line.uptrend.xyaxis").foregroundStyle(.pink)
+                                    Text(tag).fontWeight(.semibold).foregroundStyle(.white)
+                                    Spacer()
+                                    Image(systemName: "arrow.up.right").foregroundStyle(.secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            Divider()
+                        }
+                        Text("POPULAR VIDEOS").font(.caption.bold()).foregroundStyle(.secondary).tracking(1.5).padding(.top, 4)
+                        ForEach(clips) { clip in
+                            Button {
+                                onSelectClip(clip)
+                                dismiss()
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Circle().fill(clip.accent).frame(width: 38, height: 38)
+                                        .overlay(Image(systemName: clip.symbol).foregroundStyle(.white))
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(clip.creator).font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                                        Text(clip.caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "play.circle").font(.title3).foregroundStyle(.cyan)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
-                Spacer()
-            }.padding()
+                .padding()
+            }
             .navigationTitle("Discover")
             .navigationBarTitleDisplayMode(.inline)
-        }.preferredColorScheme(.dark)
+        }
+        .preferredColorScheme(.dark)
     }
 }
 
