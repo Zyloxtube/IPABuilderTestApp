@@ -1395,9 +1395,21 @@ struct SearchSheet: View {
     @State private var isTrendingSelected = false
     @State private var showTrendingPage = false
     @State private var selectedTrendToOpen: String? = nil
+    @State private var hashtagResults: [[String: Any]] = []
+    @State private var hashtagLoading = false
+    @State private var hashtagError = ""
     let clips: [FeedClip]
     let onSelectClip: (FeedClip) -> Void
     private let trends = ["#loopchallenge", "#travelcore", "#oddlysatisfying"]
+
+    private var isHashtagSearch: Bool {
+        query.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("#")
+    }
+
+    private var hashtagPrefix: String {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return term.hasPrefix("#") ? String(term.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines) : ""
+    }
 
     private var matchingClips: [FeedClip] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1437,7 +1449,56 @@ struct SearchSheet: View {
                     .padding(12)
                     .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
 
-                    if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if isHashtagSearch {
+                        HStack {
+                            Text("HASHTAG RESULTS").font(.caption.bold()).foregroundStyle(.secondary).tracking(1.4)
+                            Spacer()
+                            Text("\(hashtagResults.count)").font(.caption).foregroundStyle(.secondary)
+                        }
+
+                        if hashtagLoading {
+                            HStack { ProgressView().tint(.white); Text("Searching hashtags…").font(.subheadline).foregroundStyle(.secondary) }
+                                .frame(maxWidth: .infinity).padding(.vertical, 28)
+                        } else if !hashtagError.isEmpty {
+                            Text(hashtagError).font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 28)
+                        } else if hashtagResults.isEmpty {
+                            VStack(spacing: 10) {
+                                Image(systemName: "number").font(.system(size: 30)).foregroundStyle(.secondary)
+                                Text("No matching hashtags").font(.headline)
+                                Text("Try another hashtag name. Hashtags are searched independently of videos.")
+                                    .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity).padding(.vertical, 35)
+                        } else {
+                            ForEach(Array(hashtagResults.enumerated()), id: \.offset) { _, item in
+                                let name = (item["name"] as? String) ?? (item["tag"] as? String)?.trimmingCharacters(in: CharacterSet(charactersIn: "#")) ?? ""
+                                let tag = (item["tag"] as? String) ?? "#\(name)"
+                                let videoCount = item["videoCount"] as? Int ?? 0
+                                Button {
+                                    selectedTrendToOpen = tag
+                                    showTrendingPage = true
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "number")
+                                            .font(.system(size: 18, weight: .semibold))
+                                            .foregroundStyle(.pink)
+                                            .frame(width: 42, height: 42)
+                                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(tag).font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                                            Text("\(videoCount) \(videoCount == 1 ? "video" : "videos")")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.secondary)
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                Divider()
+                            }
+                        }
+                    } else if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         HStack {
                             Text("VIDEO RESULTS").font(.caption.bold()).foregroundStyle(.secondary).tracking(1.4)
                             Spacer()
@@ -1447,7 +1508,7 @@ struct SearchSheet: View {
                             VStack(spacing: 10) {
                                 Image(systemName: "video.slash").font(.system(size: 30)).foregroundStyle(.secondary)
                                 Text("No matching videos").font(.headline)
-                                Text("Try a creator name, caption, sound, or hashtag.")
+                                Text("Try a creator name, caption, sound, or type # to search hashtags.")
                                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                             }
                             .frame(maxWidth: .infinity).padding(.vertical, 35)
@@ -1457,9 +1518,7 @@ struct SearchSheet: View {
                                     Button {
                                         onSelectClip(clip)
                                         dismiss()
-                                    } label: {
-                                        VideoPreviewTile(clip: clip)
-                                    }
+                                    } label: { VideoPreviewTile(clip: clip) }
                                     .buttonStyle(.plain)
                                 }
                             }
@@ -1500,9 +1559,7 @@ struct SearchSheet: View {
                                 Button {
                                     onSelectClip(clip)
                                     dismiss()
-                                } label: {
-                                    VideoPreviewTile(clip: clip)
-                                }
+                                } label: { VideoPreviewTile(clip: clip) }
                                 .buttonStyle(.plain)
                             }
                         }
@@ -1518,6 +1575,22 @@ struct SearchSheet: View {
                     onSelectClip(chosen)
                     dismiss()
                 })
+            }
+            .task(id: hashtagPrefix) {
+                guard isHashtagSearch else {
+                    hashtagResults = []
+                    hashtagError = ""
+                    return
+                }
+                hashtagLoading = true
+                hashtagError = ""
+                do {
+                    hashtagResults = try await LerizAPI.searchHashtags(prefix: hashtagPrefix)
+                } catch {
+                    hashtagResults = []
+                    hashtagError = "Could not load hashtags. Check your connection and try again."
+                }
+                hashtagLoading = false
             }
         }
         .preferredColorScheme(.dark)
