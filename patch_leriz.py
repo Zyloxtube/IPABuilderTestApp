@@ -578,7 +578,7 @@ r'''    func configure(position: AVCaptureDevice.Position, completion: @escaping
                 DispatchQueue.main.async { completion(nil) }
             } catch {
                 self.session.commitConfiguration()
-                DispatchQueue.main.async { completion("Could not open camera: \\(error.localizedDescription)") }
+                DispatchQueue.main.async { completion("Could not open camera: \(error.localizedDescription)") }
             }
         }
     }''',
@@ -620,7 +620,7 @@ r'''    private var isConfigured = false
                 DispatchQueue.main.async { completion(nil) }
             } catch {
                 self.session.commitConfiguration()
-                DispatchQueue.main.async { completion("Could not open camera: \\(error.localizedDescription)") }
+                DispatchQueue.main.async { completion("Could not open camera: \(error.localizedDescription)") }
             }
         }
     }''',
