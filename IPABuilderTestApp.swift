@@ -7,6 +7,7 @@ import SceneKit
 import ReplayKit
 import AVFoundation
 import CoreMedia
+import CoreImage
 import PhotosUI
 import Photos
 import UniformTypeIdentifiers
@@ -2700,7 +2701,7 @@ struct CreateVideoPage: View {
         }
         .fullScreenCover(isPresented: $showEditor) {
             if let url = recordedURL {
-                VideoEditorView(url: url) { payload, editedURL in
+                VideoEditorView(url: url, selectedFilter: selectedFilter) { payload, editedURL in
                     onPost(payload, editedURL)
                 }
             }
@@ -2881,13 +2882,13 @@ struct HashtagVideosSheet: View {
 
 struct VideoEditorView: View {
     let url: URL
+    let selectedFilter: String
     let onPost: (String, URL) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var title = ""
     @State private var caption = ""
     @State private var editorStep = 0
-    @State private var selectedFilter = "Original"
     @State private var previewPlayer = AVPlayer()
     @State private var textColor = Color.white
     @State private var opacity = 1.0
@@ -2965,6 +2966,10 @@ struct VideoEditorView: View {
                           item === previewPlayer.currentItem else { return }
                     previewPlayer.seek(to: .zero) { _ in previewPlayer.play() }
                 }
+            if selectedFilter != "Original" {
+                let tint: Color = selectedFilter == "Warm" ? .orange : selectedFilter == "Cool" ? .cyan : selectedFilter == "Vivid" ? .pink : selectedFilter == "Mono" ? .white : .purple
+                Rectangle().fill(tint.opacity(selectedFilter == "Mono" ? 0.16 : 0.10)).allowsHitTesting(false)
+            }
             if !text.isEmpty {
                 Text(text)
                     .font(.system(size: 28, weight: .black, design: .rounded))
@@ -3105,11 +3110,52 @@ struct VideoEditorView: View {
         let payload = "\u{001E}LERIZ_TITLE:" + cleanTitle + "\n" + cleanCaption
         Task {
             await ensureHashtagsExist(in: cleanCaption)
+            let filteredURL = await applySelectedFilter(to: url) ?? url
             if overlay.isEmpty {
-                await MainActor.run { onPost(payload, url) }
+                await MainActor.run { onPost(payload, filteredURL) }
             } else {
-                let rendered = await renderTextIntoVideo(text: overlay, sourceURL: url, color: UIColor(textColor), opacity: opacity, border: useBorder, gradient: useGradient)
-                await MainActor.run { onPost(payload, rendered ?? url) }
+                let rendered = await renderTextIntoVideo(text: overlay, sourceURL: filteredURL, color: UIColor(textColor), opacity: opacity, border: useBorder, gradient: useGradient)
+                await MainActor.run { onPost(payload, rendered ?? filteredURL) }
+            }
+        }
+    }
+
+    private func applySelectedFilter(to sourceURL: URL) async -> URL? {
+        guard selectedFilter != "Original" else { return sourceURL }
+        let asset = AVURLAsset(url: sourceURL)
+        let composition = AVVideoComposition(asset: asset) { request in
+            let source = request.sourceImage
+            let image: CIImage
+            switch self.selectedFilter {
+            case "Vivid":
+                image = source.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.4, kCIInputContrastKey: 1.12, kCIInputBrightnessKey: 0.025])
+            case "Warm":
+                image = source.applyingFilter("CIPhotoEffectInstant")
+            case "Cool":
+                image = source.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.15, kCIInputContrastKey: 1.08, kCIInputBrightnessKey: 0.0])
+                    .applyingFilter("CIColorMatrix", parameters: [
+                        "inputRVector": CIVector(x: 0.94, y: 0, z: 0, w: 0),
+                        "inputGVector": CIVector(x: 0, y: 1.0, z: 0, w: 0),
+                        "inputBVector": CIVector(x: 0, y: 0, z: 1.12, w: 0)
+                    ])
+            case "Mono":
+                image = source.applyingFilter("CIPhotoEffectMono")
+            case "Dream":
+                image = source.applyingFilter("CIPhotoEffectFade")
+            default:
+                image = source
+            }
+            request.finish(with: image.cropped(to: source.extent), context: nil)
+        }
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent("Leriz-filtered-\(UUID().uuidString).mp4")
+        try? FileManager.default.removeItem(at: output)
+        guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else { return nil }
+        exporter.outputURL = output
+        exporter.outputFileType = .mp4
+        exporter.videoComposition = composition
+        return await withCheckedContinuation { continuation in
+            exporter.exportAsynchronously {
+                continuation.resume(returning: exporter.status == .completed ? output : nil)
             }
         }
     }
