@@ -1470,7 +1470,8 @@ struct SearchSheet: View {
                             }
                             .frame(maxWidth: .infinity).padding(.vertical, 35)
                         } else {
-                            ForEach(Array(hashtagResults.enumerated()), id: \.offset) { _, item in
+                            ForEach(Array(hashtagResults.enumerated()), id: \.offset) { entry in
+                                let item = entry.element
                                 let name = (item["name"] as? String) ?? (item["tag"] as? String)?.trimmingCharacters(in: CharacterSet(charactersIn: "#")) ?? ""
                                 let tag = (item["tag"] as? String) ?? "#\(name)"
                                 let videoCount = item["videoCount"] as? Int ?? 0
