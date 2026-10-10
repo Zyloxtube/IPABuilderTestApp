@@ -197,6 +197,35 @@ def install_features(app, ns):
             "videoCount": r["videos"]
         } for r in rows]})
 
+    def user_connections(username, kind):
+        viewer = current_user()
+        with connect_db() as db:
+            target = db.execute("SELECT * FROM users WHERE username=? COLLATE NOCASE", (username.lstrip("@"),)).fetchone()
+            if not target:
+                return fail("User not found.", 404)
+            table_names = {r["name"] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            follow_table = next((name for name in ("follows", "user_follows", "followers") if name in table_names), None)
+            if not follow_table:
+                return jsonify({"ok": True, "users": []})
+            cols = {r["name"] for r in db.execute("PRAGMA table_info(" + follow_table + ")")}
+            follower_col = next((c for c in ("follower_id", "user_id", "from_user_id") if c in cols), None)
+            following_col = next((c for c in ("following_id", "followed_id", "target_user_id", "to_user_id") if c in cols), None)
+            if not follower_col or not following_col:
+                return jsonify({"ok": True, "users": []})
+            if kind == "followers":
+                sql = "SELECT u.* FROM " + follow_table + " f JOIN users u ON u.id=f." + follower_col + " WHERE f." + following_col + "=? ORDER BY u.username COLLATE NOCASE"
+            else:
+                sql = "SELECT u.* FROM " + follow_table + " f JOIN users u ON u.id=f." + following_col + " WHERE f." + follower_col + "=? ORDER BY u.username COLLATE NOCASE"
+            rows = db.execute(sql, (target["id"],)).fetchall()
+        viewer_id = viewer["id"] if viewer else None
+        return jsonify({"ok": True, "users": [public_user_with_verified(row, viewer_id) for row in rows]})
+
+    def list_followers(username):
+        return user_connections(username, "followers")
+
+    def list_following(username):
+        return user_connections(username, "following")
+
     def create_hashtag():
         user = current_user()
         data = body()
@@ -240,3 +269,5 @@ def install_features(app, ns):
     app.add_url_rule("/api/hashtags", "leriz_discover_hashtags", discover_hashtags, methods=["GET"])
     app.add_url_rule("/api/hashtags", "leriz_create_hashtag", require_auth(create_hashtag), methods=["POST"])
     app.add_url_rule("/api/hashtags/<tag>", "leriz_hashtag_videos", hashtag_videos, methods=["GET"])
+    app.add_url_rule("/api/users/<username>/followers", "leriz_user_followers", list_followers, methods=["GET"])
+    app.add_url_rule("/api/users/<username>/following", "leriz_user_following", list_following, methods=["GET"])
