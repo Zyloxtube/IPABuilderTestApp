@@ -69,6 +69,7 @@ struct LerizAPI {
             let likes = row["likes"] as? Int ?? 0
             let comments = row["comments"] as? Int ?? 0
             var clip = FeedClip(id: abs(id.hashValue % 2_000_000_000), creator: display, handle: "@\(username)", caption: caption, tags: "", song: "original audio · \(username)", likes: String(likes), comments: String(comments), views: row["views"] as? Int ?? 0, accent: .purple, videoURL: url, symbol: "person")
+            clip.avatarURL = user["avatarURL"] as? String ?? user["avatar_url"] as? String ?? ""
             clip.initiallyLiked = row["likedByMe"] as? Bool ?? false
             clip.initiallySaved = row["savedByMe"] as? Bool ?? false
             return clip
@@ -179,6 +180,53 @@ struct LerizApp: App {
     }
 }
 
+struct LerizAvatarView: View {
+    let urlString: String
+    let size: CGFloat
+    let fallbackColor: Color
+
+    var body: some View {
+        Group {
+            if let url = resolvedURL {
+                AsyncImage(url: url, transaction: Transaction(animation: .easeInOut(duration: 0.15))) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        fallback
+                    }
+                }
+            } else {
+                fallback
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(.white.opacity(0.14), lineWidth: 1))
+        .accessibilityLabel("Profile picture")
+    }
+
+    private var fallback: some View {
+        Circle().fill(fallbackColor)
+            .overlay(Image(systemName: "person.fill").font(.system(size: size * 0.43, weight: .semibold)).foregroundStyle(.white))
+    }
+
+    private var resolvedURL: URL? {
+        let raw = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return nil }
+        let absolute: String
+        if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
+            absolute = raw
+        } else {
+            absolute = LerizAPI.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + (raw.hasPrefix("/") ? raw : "/\(raw)")
+        }
+        guard var components = URLComponents(string: absolute) else { return nil }
+        // Avatar endpoints may keep the same path after an upload; bypass stale image caches.
+        components.queryItems = (components.queryItems ?? []).filter { $0.name != "avatar_refresh" }
+        components.queryItems?.append(URLQueryItem(name: "avatar_refresh", value: String(Int(Date().timeIntervalSince1970))))
+        return components.url
+    }
+}
+
 struct FeedClip: Identifiable {
     let id: Int
     let creator: String
@@ -192,6 +240,7 @@ struct FeedClip: Identifiable {
     let accent: Color
     let videoURL: String
     let symbol: String
+    var avatarURL: String = ""
     var initiallyLiked = false
     var initiallySaved = false
 
@@ -803,10 +852,7 @@ struct ClipPage: View {
                     VStack(alignment: .leading, spacing: 11) {
                         HStack(spacing: 8) {
                             Button(action: onProfile) {
-                                ZStack {
-                                    Circle().fill(clip.accent).frame(width: 38, height: 38)
-                                    Image(systemName: clip.symbol).font(.system(size: 17, weight: .bold)).foregroundStyle(.white)
-                                }
+                                LerizAvatarView(urlString: clip.avatarURL, size: 38, fallbackColor: clip.accent)
                             }
                             .buttonStyle(.plain)
                             HStack(spacing: 4) {
@@ -858,10 +904,7 @@ struct ClipPage: View {
                     VStack(spacing: 20) {
                         ZStack(alignment: .bottom) {
                             Button(action: onProfile) {
-                                ZStack {
-                                    Circle().fill(clip.accent).frame(width: 46, height: 46)
-                                    Image(systemName: clip.symbol).font(.system(size: 21, weight: .bold)).foregroundStyle(.white).frame(width: 46, height: 46)
-                                }
+                                LerizAvatarView(urlString: clip.avatarURL, size: 46, fallbackColor: clip.accent)
                             }
                             .buttonStyle(.plain)
                             if !isFollowing {
@@ -1672,12 +1715,8 @@ struct ProfileSheet: View {
                     HStack(spacing: 16) {
                         PhotosPicker(selection: $selectedAvatar, matching: .images) {
                             Group {
-                                if clip != nil, let rawAvatar = profileUser["avatarURL"] as? String, !rawAvatar.isEmpty,
-                                   let avatarURL = URL(string: rawAvatar.hasPrefix("http") ? rawAvatar : LerizAPI.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + (rawAvatar.hasPrefix("/") ? rawAvatar : "/\(rawAvatar)")) {
-                                    AsyncImage(url: avatarURL) { phase in
-                                        if let image = phase.image { image.resizable().scaledToFill() }
-                                        else { Circle().fill(.white.opacity(0.08)).overlay(Image(systemName: "person.fill").foregroundStyle(.white)) }
-                                    }
+                                if clip != nil {
+                                    LerizAvatarView(urlString: profileUser["avatarURL"] as? String ?? "", size: 88, fallbackColor: .purple)
                                 } else if let data = Data(base64Encoded: profileImageData), let image = UIImage(data: data) {
                                     Image(uiImage: image).resizable().scaledToFill()
                                 } else {
@@ -1824,6 +1863,7 @@ struct ProfileSheet: View {
                 let raw = row["videoURL"] as? String ?? "/api/videos/\(id)/file"
                 let url = URL(string: raw)?.scheme == nil ? LerizAPI.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + (raw.hasPrefix("/") ? raw : "/\(raw)") : raw
                 var video = FeedClip(id: abs(id.hashValue % 2_000_000_000), creator: display, handle: "@\(handle)", caption: row["caption"] as? String ?? "", tags: "", song: "original audio · \(handle)", likes: String(row["likes"] as? Int ?? 0), comments: String(row["comments"] as? Int ?? 0), views: row["views"] as? Int ?? 0, accent: .purple, videoURL: url, symbol: "person")
+                video.avatarURL = (user["avatarURL"] as? String) ?? (user["avatar_url"] as? String) ?? (profileUser["avatarURL"] as? String) ?? ""
                 video.initiallyLiked = row["likedByMe"] as? Bool ?? false
                 video.initiallySaved = row["savedByMe"] as? Bool ?? false
                 return video
@@ -1993,7 +2033,9 @@ struct SavedVideosSheet: View {
                         guard let id = row["id"] as? String else { return nil }
                         let user = row["user"] as? [String: Any] ?? [:]
                         let username = user["username"] as? String ?? "user"
-                        return FeedClip(id: abs(id.hashValue % 2_000_000_000), creator: user["displayName"] as? String ?? username, handle: "@\(username)", caption: row["caption"] as? String ?? "", tags: "", song: "", likes: String(row["likes"] as? Int ?? 0), comments: String(row["comments"] as? Int ?? 0), views: row["views"] as? Int ?? 0, accent: .purple, videoURL: row["videoURL"] as? String ?? "\(LerizAPI.baseURL)/api/videos/\(id)/file", symbol: "person")
+                        var video = FeedClip(id: abs(id.hashValue % 2_000_000_000), creator: user["displayName"] as? String ?? username, handle: "@\(username)", caption: row["caption"] as? String ?? "", tags: "", song: "", likes: String(row["likes"] as? Int ?? 0), comments: String(row["comments"] as? Int ?? 0), views: row["views"] as? Int ?? 0, accent: .purple, videoURL: row["videoURL"] as? String ?? "\(LerizAPI.baseURL)/api/videos/\(id)/file", symbol: "person")
+                        video.avatarURL = user["avatarURL"] as? String ?? user["avatar_url"] as? String ?? ""
+                        return video
                     }
                 } catch { errorMessage = "Could not load saved videos." }
             }
