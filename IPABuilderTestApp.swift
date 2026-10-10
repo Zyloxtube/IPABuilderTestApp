@@ -2138,6 +2138,13 @@ struct VideoEditorView: View {
     @State private var showCreateHashtag = false
     @State private var showHashtagSearch = false
 
+    private var overlayTextStyle: AnyShapeStyle {
+        if useGradient {
+            return AnyShapeStyle(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .leading, endPoint: .trailing))
+        }
+        return AnyShapeStyle(textColor)
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
@@ -2146,7 +2153,7 @@ struct VideoEditorView: View {
                     if !text.isEmpty {
                         Text(text)
                             .font(.system(size: 28, weight: .black, design: .rounded))
-                            .foregroundStyle(useGradient ? AnyShapeStyle(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .leading, endPoint: .trailing)) : AnyShapeStyle(textColor))
+                            .foregroundStyle(overlayTextStyle)
                             .padding(5)
                             .background(useBorder ? Color.black.opacity(0.48) : .clear, in: RoundedRectangle(cornerRadius: 5))
                             .overlay { if useBorder { RoundedRectangle(cornerRadius: 5).stroke(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .leading, endPoint: .trailing), lineWidth: 2) } }
