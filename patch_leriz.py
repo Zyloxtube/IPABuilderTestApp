@@ -6,6 +6,9 @@ s = p.read_text(encoding="utf-8")
 def sub(old, new, label):
     global s
     n = s.count(old)
+    # Keep the build patch safe to re-run when a change is already in the source.
+    if n == 0 and new in s:
+        return
     if n != 1:
         raise SystemExit(f"{label}: expected exactly one match, got {n}")
     s = s.replace(old, new, 1)
