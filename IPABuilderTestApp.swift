@@ -109,6 +109,19 @@ struct LerizAPI {
         return json["comment"] as? [String: Any] ?? json
     }
 
+    static func editComment(commentID: String, text: String) async throws -> [String: Any] {
+        let encodedID = commentID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? commentID
+        let body = try JSONSerialization.data(withJSONObject: ["text": text])
+        let (data, _) = try await request("api/comments/\(encodedID)", method: "PATCH", body: body)
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        return json["comment"] as? [String: Any] ?? json
+    }
+
+    static func deleteComment(commentID: String) async throws {
+        let encodedID = commentID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? commentID
+        _ = try await request("api/comments/\(encodedID)", method: "DELETE", body: Data("{}".utf8))
+    }
+
     static func toggleCommentLike(commentID: String) async throws -> [String: Any] {
         let encodedID = commentID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? commentID
         let (data, _) = try await request("api/comments/\(encodedID)/like", method: "POST", body: Data("{}".utf8))
@@ -941,6 +954,11 @@ struct CommentsSheet: View {
     @State private var commentIDs: [String] = []
     @State private var commentAuthors: [String] = []
     @State private var commentParentIDs: [String?] = []
+    @State private var commentEdited: [Bool] = []
+    @State private var editingCommentIndex: Int? = nil
+    @State private var editingText = ""
+    @State private var showDeleteConfirmation = false
+    @State private var deletingCommentID: String? = nil
     @AppStorage("lerizUsername") private var currentUsername = ""
     @State private var commentError = ""
     @State private var showEmojiPicker = false
@@ -997,13 +1015,22 @@ struct CommentsSheet: View {
                         }
                         ForEach(Array(posted.enumerated()), id: \.offset) { index, text in
                             let commentID = index < commentIDs.count ? commentIDs[index] : "local-\(index)"
+                            let author = index < commentAuthors.count ? commentAuthors[index] : "user"
+                            let isOwnComment = !currentUsername.isEmpty && author.caseInsensitiveCompare(currentUsername) == .orderedSame
                             HStack(alignment: .top, spacing: 11) {
                                 Circle().fill(LinearGradient(colors: [.purple, .pink, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
                                     .frame(width: 38, height: 38)
                                     .overlay(Image(systemName: "person").font(.system(size: 15)).foregroundStyle(.white))
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(index < commentAuthors.count ? commentAuthors[index] : "user")
-                                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                                    HStack(spacing: 5) {
+                                        Text(author)
+                                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                                        if index < commentEdited.count && commentEdited[index] {
+                                            Text("(edited)")
+                                                .font(.system(size: 10, weight: .regular))
+                                                .foregroundStyle(.gray)
+                                        }
+                                    }
                                     Text(text).font(.system(size: 14))
                                     HStack(spacing: 14) {
                                         Text("2h").font(.caption).foregroundStyle(.secondary)
@@ -1032,46 +1059,114 @@ struct CommentsSheet: View {
                             .padding(.leading, index < commentParentIDs.count && commentParentIDs[index] != nil ? 48 : 17)
                             .padding(.trailing, 17)
                             .padding(.vertical, 13)
+                            .contentShape(Rectangle())
+                            .contextMenu {
+                                if isOwnComment && !commentID.hasPrefix("local-") && !commentID.hasPrefix("reply:") {
+                                    Button {
+                                        editingCommentIndex = index
+                                        editingText = text
+                                        commentError = ""
+                                        commentFieldFocused = true
+                                    } label: {
+                                        Label("Edit comment", systemImage: "pencil")
+                                    }
+                                    Button(role: .destructive) {
+                                        deletingCommentID = commentID
+                                        showDeleteConfirmation = true
+                                    } label: {
+                                        Label("Delete comment", systemImage: "trash")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
 
                 Divider().overlay(Color.white.opacity(0.08))
-                HStack(spacing: 10) {
-                    Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 35, height: 35)
-                        .overlay(Image(systemName: "person").font(.system(size: 14)).foregroundStyle(.white))
-                    HStack(spacing: 8) {
-                        TextField("Add a comment…", text: $comment, axis: .vertical)
+                if editingCommentIndex != nil {
+                    VStack(alignment: .leading, spacing: 9) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "pencil").font(.system(size: 12, weight: .semibold)).foregroundStyle(.cyan)
+                            Text("Editing comment").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        TextField("Edit your comment…", text: $editingText, axis: .vertical)
                             .font(.system(size: 14))
                             .lineLimit(1...4)
                             .focused($commentFieldFocused)
-                            .submitLabel(.send)
-                            .onSubmit(postComment)
-                        if !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Button(action: postComment) {
-                                Image(systemName: "arrow.up.circle")
-                                    .font(.system(size: 27))
-                                    .foregroundStyle(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .leading, endPoint: .trailing))
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
+                        HStack(spacing: 10) {
+                            Button("Cancel") {
+                                editingCommentIndex = nil
+                                editingText = ""
+                                commentFieldFocused = false
+                                commentError = ""
+                            }
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 9)
+                            .padding(.horizontal, 14)
+                            .background(Color.white.opacity(0.08), in: Capsule())
+                            Button {
+                                saveEditedComment()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "checkmark")
+                                    Text("Save")
+                                }
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.vertical, 9)
+                                .padding(.horizontal, 18)
+                                .background(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .leading, endPoint: .trailing), in: Capsule())
                             }
                             .buttonStyle(.plain)
+                            .disabled(editingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            Spacer()
                         }
                     }
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 9)
-                    .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 22))
-                    Menu {
-                        ForEach(["😀","😂","🥹","😍","🔥","❤️","😭","👏","✨","🙏","💀","🥰"], id: \.self) { emoji in
-                            Button(emoji) { comment.append(emoji) }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(.ultraThinMaterial)
+                } else {
+                    HStack(spacing: 10) {
+                        Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 35, height: 35)
+                            .overlay(Image(systemName: "person").font(.system(size: 14)).foregroundStyle(.white))
+                        HStack(spacing: 8) {
+                            TextField("Add a comment…", text: $comment, axis: .vertical)
+                                .font(.system(size: 14))
+                                .lineLimit(1...4)
+                                .focused($commentFieldFocused)
+                                .submitLabel(.send)
+                                .onSubmit(postComment)
+                            if !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Button(action: postComment) {
+                                    Image(systemName: "arrow.up.circle")
+                                        .font(.system(size: 27))
+                                        .foregroundStyle(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .leading, endPoint: .trailing))
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
-                    } label: {
-                        Image(systemName: "face.smiling").font(.system(size: 21)).foregroundStyle(.white.opacity(0.8))
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 9)
+                        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 22))
+                        Menu {
+                            ForEach(["😀","😂","🥹","😍","🔥","❤️","😭","👏","✨","🙏","💀","🥰"], id: \.self) { emoji in
+                                Button(emoji) { comment.append(emoji) }
+                            }
+                        } label: {
+                            Image(systemName: "face.smiling").font(.system(size: 21)).foregroundStyle(.white.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(.ultraThinMaterial)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-                .background(.ultraThinMaterial)
             }
             .background(Color(uiColor: .systemBackground))
             .toolbar {
@@ -1080,6 +1175,14 @@ struct CommentsSheet: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
+        }
+        .alert("Delete this comment?", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { deletingCommentID = nil }
+            Button("Delete", role: .destructive) {
+                if let id = deletingCommentID { Task { await deleteComment(commentID: id) } }
+            }
+        } message: {
+            Text("This comment and its replies will be deleted.")
         }
         .preferredColorScheme(.dark)
         .onAppear {
@@ -1124,10 +1227,71 @@ struct CommentsSheet: View {
                     let value = row["parentID"] ?? row["parentId"]
                     return value as? String
                 }
+                commentEdited = rows.map { $0["edited"] as? Bool ?? false }
                 commentError = ""
             }
         } catch {
             await MainActor.run { commentError = "Could not load comments. Try again." }
+        }
+    }
+
+    private func saveEditedComment() {
+        let clean = editingText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, let index = editingCommentIndex,
+              index < commentIDs.count else { return }
+        let id = commentIDs[index]
+        guard !id.hasPrefix("local-"), !id.hasPrefix("reply:") else {
+            commentError = "This comment has not synced to the server yet."
+            return
+        }
+        Task {
+            do {
+                _ = try await LerizAPI.editComment(commentID: id, text: clean)
+                await MainActor.run {
+                    guard index < posted.count, index < commentEdited.count else { return }
+                    posted[index] = clean
+                    commentEdited[index] = true
+                    editingCommentIndex = nil
+                    editingText = ""
+                    commentFieldFocused = false
+                    commentError = ""
+                }
+            } catch {
+                await MainActor.run { commentError = "Could not save edit: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    private func deleteComment(commentID: String) async {
+        guard !commentID.hasPrefix("local-"), !commentID.hasPrefix("reply:") else { return }
+        do {
+            try await LerizAPI.deleteComment(commentID: commentID)
+            await MainActor.run {
+                // The server deletes replies with their parent. Remove the same rows locally.
+                let removedIDs = Set(commentIDs.enumerated().compactMap { index, id -> String? in
+                    if id == commentID { return id }
+                    if index < commentParentIDs.count, commentParentIDs[index] == commentID { return id }
+                    return nil
+                })
+                let kept = posted.indices.filter { index in
+                    let id = index < commentIDs.count ? commentIDs[index] : ""
+                    return !removedIDs.contains(id)
+                }
+                posted = kept.map { posted[$0] }
+                commentIDs = kept.compactMap { $0 < commentIDs.count ? commentIDs[$0] : nil }
+                commentAuthors = kept.compactMap { $0 < commentAuthors.count ? commentAuthors[$0] : nil }
+                commentParentIDs = kept.map { $0 < commentParentIDs.count ? commentParentIDs[$0] : nil }
+                commentEdited = kept.map { $0 < commentEdited.count ? commentEdited[$0] : false }
+                likedComments.subtract(removedIDs)
+                likedCommentIDsJSON = String(data: (try? JSONEncoder().encode(Array(likedComments))) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
+                deletingCommentID = nil
+                commentError = ""
+            }
+        } catch {
+            await MainActor.run {
+                deletingCommentID = nil
+                commentError = "Could not delete comment: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -1153,6 +1317,7 @@ struct CommentsSheet: View {
                     commentIDs.insert(newID, at: min(insertionIndex, commentIDs.count))
                     commentAuthors.insert(currentUsername.isEmpty ? "user" : currentUsername, at: min(insertionIndex, commentAuthors.count))
                     commentParentIDs.insert(actualParent, at: min(insertionIndex, commentParentIDs.count))
+                    commentEdited.insert(false, at: min(insertionIndex, commentEdited.count))
                     comment = ""
                     replyToID = nil
                     replyToAuthor = ""
