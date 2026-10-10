@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import AVKit
 import UIKit
 import ARKit
@@ -197,8 +198,7 @@ struct LerizLaunchView: View {
             withAnimation(.easeInOut(duration: 1.0)) {
                 enterApp = true
             }
-        }
-    }
+        }    }
 }
 
 struct LoopFeedView: View {
@@ -397,8 +397,7 @@ struct ClipPage: View {
                         if isActive { player.play() }
                     }
                     .onChange(of: isActive) { active in
-                        if active { player.play(); isPlaying = true } else { player.pause() }
-                    }
+                        if active { player.play(); isPlaying = true } else { player.pause() }                    }
                     .onDisappear { player.pause() }
                     .onTapGesture {
                         if isPlaying { player.pause() } else { player.play() }
@@ -597,8 +596,7 @@ struct CommentsSheet: View {
                                     .overlay(Image(systemName: "person").font(.system(size: 15)).foregroundStyle(.white))
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(["loopfan_24", "noor.exe", "pixelkid"][index % 3])
-                                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                                    Text(text).font(.system(size: 14))
+                                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)                                    Text(text).font(.system(size: 14))
                                     HStack(spacing: 14) {
                                         Text("2h").font(.caption).foregroundStyle(.secondary)
                                         Button("Reply") { comment = "@\(["loopfan_24", "noor.exe", "pixelkid"][index % 3]) "; commentFieldFocused = true }
@@ -678,9 +676,11 @@ struct CommentsSheet: View {
 struct SearchSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
+    @State private var isTrendingSelected = false
+    @State private var showTrendingPage = false
     let clips: [FeedClip]
     let onSelectClip: (FeedClip) -> Void
-    let trends = ["#loopchallenge", "#travelcore", "#oddlysatisfying", "#gaming", "#dailyvibes", "#foodtok"]
+    private let trends = ["#loopchallenge", "#travelcore", "#oddlysatisfying"]
 
     private var matchingClips: [FeedClip] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -693,6 +693,12 @@ struct SearchSheet: View {
             $0.song.localizedCaseInsensitiveContains(term)
         }
     }
+
+    private var popularClips: [FeedClip] {
+        clips.sorted { $0.views > $1.views }
+    }
+
+    private let columns = [GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9)]
 
     var body: some View {
         NavigationStack {
@@ -723,34 +729,32 @@ struct SearchSheet: View {
                             }
                             .frame(maxWidth: .infinity).padding(.vertical, 35)
                         } else {
-                            ForEach(matchingClips) { clip in
-                                Button {
-                                    onSelectClip(clip)
-                                    dismiss()
-                                } label: {
-                                    HStack(spacing: 12) {
-                                        ZStack {
-                                            RoundedRectangle(cornerRadius: 10).fill(clip.accent.gradient).frame(width: 74, height: 94)
-                                            Image(systemName: clip.symbol).font(.system(size: 27, weight: .semibold)).foregroundStyle(.white)
-                                            Image(systemName: "play.fill").font(.system(size: 11, weight: .bold))
-                                                .padding(6).background(.black.opacity(0.5), in: Circle())
-                                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing).padding(7)
-                                        }
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            Text(clip.creator).font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
-                                            Text(clip.caption).font(.system(size: 13)).foregroundStyle(.white.opacity(0.82)).lineLimit(2)
-                                            Text("\(clip.handle)  ·  \(clip.tags)").font(.system(size: 11, weight: .medium)).foregroundStyle(.cyan).lineLimit(1)
-                                        }
-                                        Spacer(minLength: 0)
-                                        Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.secondary)
+                            LazyVGrid(columns: columns, spacing: 12) {
+                                ForEach(matchingClips.sorted { $0.views > $1.views }) { clip in
+                                    Button {
+                                        onSelectClip(clip)
+                                        dismiss()
+                                    } label: {
+                                        VideoPreviewTile(clip: clip)
                                     }
-                                    .padding(9).background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     } else {
-                        Text("TRENDING NOW").font(.caption.bold()).foregroundStyle(.secondary).tracking(1.5)
+                        Button {
+                            isTrendingSelected = true
+                            showTrendingPage = true
+                        } label: {
+                            HStack(spacing: 7) {
+                                Text("TRENDING NOW").font(.caption.bold()).tracking(1.5)
+                                Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .bold))
+                            }
+                            .foregroundStyle(isTrendingSelected ? Color.blue : Color.secondary)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
                         ForEach(trends, id: \.self) { tag in
                             Button { query = tag } label: {
                                 HStack {
@@ -763,33 +767,131 @@ struct SearchSheet: View {
                             .buttonStyle(.plain)
                             Divider()
                         }
+
                         Text("POPULAR VIDEOS").font(.caption.bold()).foregroundStyle(.secondary).tracking(1.5).padding(.top, 4)
-                        ForEach(clips) { clip in
-                            Button {
-                                onSelectClip(clip)
-                                dismiss()
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Circle().fill(clip.accent).frame(width: 38, height: 38)
-                                        .overlay(Image(systemName: clip.symbol).foregroundStyle(.white))
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(clip.creator).font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-                                        Text(clip.caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "play.circle").font(.title3).foregroundStyle(.cyan)
+                        LazyVGrid(columns: columns, spacing: 12) {
+                            ForEach(popularClips) { clip in
+                                Button {
+                                    onSelectClip(clip)
+                                    dismiss()
+                                } label: {
+                                    VideoPreviewTile(clip: clip)
                                 }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
                 .padding()
             }
+            .background(Color.black)
             .navigationTitle("Discover")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $showTrendingPage) {
+                TrendingVideosPage(clips: clips, onSelectClip: { chosen in
+                    onSelectClip(chosen)
+                    dismiss()
+                })
+            }
         }
         .preferredColorScheme(.dark)
+    }
+}
+
+struct TrendingVideosPage: View {
+    @Environment(\.dismiss) private var dismiss
+    let clips: [FeedClip]
+    let onSelectClip: (FeedClip) -> Void
+
+    private var rankedClips: [FeedClip] { clips.sorted { $0.views > $1.views } }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 13) {
+                ForEach(Array(rankedClips.enumerated()), id: \.element.id) { index, clip in
+                    Button {
+                        onSelectClip(clip)
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 13) {
+                            Text("#\(index + 1)")
+                                .font(.system(size: 14, weight: .black, design: .rounded))
+                                .foregroundStyle(index == 0 ? .yellow : .secondary)
+                                .frame(width: 27)
+                            VideoPreviewTile(clip: clip)
+                                .frame(width: 108)
+                            VStack(alignment: .leading, spacing: 7) {
+                                Text(clip.caption).font(.system(size: 14, weight: .bold)).foregroundStyle(.white).lineLimit(3)
+                                Text(clip.creator + " · " + clip.handle).font(.caption).foregroundStyle(.white.opacity(0.65))
+                                Label("\(clip.views.formatted()) views", systemImage: "play.fill")
+                                    .font(.system(size: 12, weight: .bold)).foregroundStyle(.cyan)
+                                Text(clip.tags).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(10)
+                        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 15))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(14)
+        }
+        .background(Color.black.ignoresSafeArea())
+        .navigationTitle("Trending now")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+}
+
+struct VideoPreviewTile: View {
+    let clip: FeedClip
+    @State private var player = AVPlayer()
+    @State private var frameIndex = 0
+    private let frameCount = 6
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            PlayerSurface(player: player)
+                .frame(maxWidth: .infinity)
+                .aspectRatio(9.0 / 16.0, contentMode: .fit)
+                .clipped()
+                .background(clip.accent.gradient)
+            LinearGradient(colors: [.clear, .black.opacity(0.58)], startPoint: .center, endPoint: .bottom)
+            VStack(alignment: .leading, spacing: 4) {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 12, weight: .black))
+                    .foregroundStyle(.white)
+                    .padding(7)
+                    .background(.black.opacity(0.48), in: Circle())
+                Text(clip.views.formatted())
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .padding(7)
+        }
+        .aspectRatio(9.0 / 16.0, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.08), lineWidth: 1))
+        .onAppear {
+            guard let url = URL(string: clip.videoURL) else { return }
+            player.replaceCurrentItem(with: AVPlayerItem(url: url))
+            player.isMuted = true
+            player.pause()
+            seekToPreviewFrame()
+        }
+        .onReceive(Timer.publish(every: 1.0 / 3.0, on: .main, in: .common).autoconnect()) { _ in
+            guard player.currentItem != nil else { return }
+            frameIndex = (frameIndex + 1) % frameCount
+            seekToPreviewFrame()
+        }
+        .onDisappear { player.pause() }
+        .allowsHitTesting(false)
+    }
+
+    private func seekToPreviewFrame() {
+        let seconds = Double(frameIndex) / 3.0
+        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 }
 
@@ -797,8 +899,7 @@ struct ProfileSheet: View {
     @Environment(\.dismiss) private var dismiss
     var clip: FeedClip? = nil
     @State private var selectedTab = 0
-    @State private var showEdit = false
-    var body: some View {
+    @State private var showEdit = false    var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
@@ -997,8 +1098,7 @@ struct CreateVideoPage: View {
                                 .font(.caption.bold()).foregroundStyle(.green)
                         } else {
                             Text("Face effects need a TrueDepth front camera")
-                                .font(.caption2).foregroundStyle(.white.opacity(0.8))
-                        }
+                                .font(.caption2).foregroundStyle(.white.opacity(0.8))                        }
                     }.padding(.bottom, 16)
                 }
                 .frame(maxHeight: .infinity)
@@ -1197,8 +1297,7 @@ struct SongDetailSheet: View {
                                         Text(item.tags).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                                     }
                                     Spacer(minLength: 0)
-                                    Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(.white.opacity(0.8))
-                                }.padding(10).background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 16))
+                                    Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(.white.opacity(0.8))                                }.padding(10).background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 16))
                             }.buttonStyle(.plain)
                         }
                     }
@@ -1397,8 +1496,7 @@ final class LoopScreenRecorder: ObservableObject {
     private var audioInput: AVAssetWriterInput?
     private var sessionStarted = false
     private var stopping = false
-    private var startCompletion: ((String?) -> Void)?
-    private let queue = DispatchQueue(label: "loop.screen-recorder")
+    private var startCompletion: ((String?) -> Void)?    private let queue = DispatchQueue(label: "loop.screen-recorder")
 
     func start(completion: @escaping (String?) -> Void) {
         outputURL = nil
