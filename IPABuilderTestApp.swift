@@ -833,6 +833,8 @@ struct CommentsSheet: View {
     @State private var comment = ""
     @State private var posted: [String] = []
     @State private var commentIDs: [String] = []
+    @State private var commentAuthors: [String] = []
+    @AppStorage("lerizUsername") private var currentUsername = ""
     @State private var commentError = ""
     @State private var showEmojiPicker = false
     @State private var likedComments: Set<Int> = []
@@ -889,12 +891,16 @@ struct CommentsSheet: View {
                                     .frame(width: 38, height: 38)
                                     .overlay(Image(systemName: "person").font(.system(size: 15)).foregroundStyle(.white))
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(index < commentIDs.count ? "user" : (UserDefaults.standard.string(forKey: "lerizUsername") ?? "user"))
+                                    Text(index < commentAuthors.count ? commentAuthors[index] : "user")
                                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
                                     Text(text).font(.system(size: 14))
                                     HStack(spacing: 14) {
                                         Text("2h").font(.caption).foregroundStyle(.secondary)
-                                        Button("Reply") { comment = "@\(["loopfan_24", "noor.exe", "pixelkid"][index % 3]) "; commentFieldFocused = true }
+                                        Button("Reply") {
+                                            let author = index < commentAuthors.count ? commentAuthors[index] : "user"
+                                            comment = "@\(author) "
+                                            commentFieldFocused = true
+                                        }
                                             .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                                     }.padding(.top, 2)
                                 }
@@ -970,6 +976,10 @@ struct CommentsSheet: View {
             await MainActor.run {
                 posted = rows.compactMap { $0["text"] as? String }
                 commentIDs = rows.compactMap { $0["id"].map { String(describing: $0) } }
+                commentAuthors = rows.map { row in
+                    let user = row["user"] as? [String: Any] ?? [:]
+                    return user["username"] as? String ?? row["username"] as? String ?? "user"
+                }
                 commentError = ""
             }
         } catch {
@@ -983,7 +993,7 @@ struct CommentsSheet: View {
         Task {
             do {
                 try await LerizAPI.postComment(videoID: videoID, text: clean)
-                await MainActor.run { posted.insert(clean, at: 0); commentIDs.insert(UUID().uuidString, at: 0); comment = ""; commentFieldFocused = false }
+                await MainActor.run { posted.insert(clean, at: 0); commentIDs.insert(UUID().uuidString, at: 0); commentAuthors.insert(currentUsername.isEmpty ? "user" : currentUsername, at: 0); comment = ""; commentFieldFocused = false }
             } catch {
                 await MainActor.run { commentError = "Comment failed: \(error.localizedDescription)" }
             }
