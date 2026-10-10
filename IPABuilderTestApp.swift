@@ -2185,6 +2185,7 @@ struct VideoEditorView: View {
                             onPost("", url)
                         } else {
                             Task {
+                                await ensureHashtagsExist(in: text)
                                 if let rendered = await renderTextIntoVideo(text: text, sourceURL: url, color: UIColor(textColor), opacity: opacity, border: useBorder, gradient: useGradient) {
                                     await MainActor.run { onPost(text, rendered) }
                                 } else {
@@ -2239,6 +2240,18 @@ struct VideoEditorView: View {
                 }.presentationDetents([.medium, .large]).preferredColorScheme(.dark)
             }
         }.preferredColorScheme(.dark)
+    }
+
+    private func ensureHashtagsExist(in caption: String) async {
+        guard let regex = try? NSRegularExpression(pattern: "#([A-Za-z0-9_]{1,50})") else { return }
+        let range = NSRange(caption.startIndex..<caption.endIndex, in: caption)
+        let names = regex.matches(in: caption, range: range).compactMap { match -> String? in
+            guard let r = Range(match.range(at: 1), in: caption) else { return nil }
+            return String(caption[r])
+        }
+        for name in Set(names) {
+            try? await LerizAPI.createHashtag(name: name, description: "")
+        }
     }
 
     private func updateHashtagSuggestions() {
