@@ -1948,6 +1948,60 @@ final class StillImageVideoExporter {
     }
 }
 
+
+struct HashtagVideosSheet: View {
+    let tag: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var videos: [[String: Any]] = []
+    @State private var loading = true
+    @State private var error = ""
+    @State private var selectedURL: URL?
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let selectedURL {
+                    VideoPlayer(player: AVPlayer(url: selectedURL))
+                        .background(.black)
+                } else if loading {
+                    ProgressView("Loading #\(tag)…")
+                } else if videos.isEmpty {
+                    ContentUnavailableView("No videos yet", systemImage: "number", description: Text("Videos tagged #\(tag) will appear here."))
+                } else {
+                    List(videos.indices, id: \.self) { index in
+                        let row = videos[index]
+                        Button {
+                            let raw = row["videoURL"] as? String ?? ""
+                            let full = raw.hasPrefix("http") ? raw : LerizAPI.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + (raw.hasPrefix("/") ? raw : "/\(raw)")
+                            selectedURL = URL(string: full)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "play.rectangle.fill").font(.system(size: 30)).foregroundStyle(.cyan)
+                                VStack(alignment: .leading) {
+                                    Text(row["caption"] as? String ?? "#\(tag)").lineLimit(2)
+                                    Text("\(row["views"] as? Int ?? 0) views").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }.buttonStyle(.plain)
+                    }.scrollContentBackground(.hidden)
+                }
+            }
+            .background(Color.black)
+            .navigationTitle("#\(tag)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .task {
+                do {
+                    let safe = tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tag
+                    let (data, _) = try await LerizAPI.request("api/hashtags/\(safe)")
+                    let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+                    videos = json["videos"] as? [[String: Any]] ?? []
+                } catch { error = error.localizedDescription }
+                loading = false
+            }
+        }.preferredColorScheme(.dark)
+    }
+}
+
 struct VideoEditorView: View {
     let url: URL
     let onPost: (String, URL) -> Void
@@ -1959,6 +2013,12 @@ struct VideoEditorView: View {
     @State private var useBorder = false
     @State private var showTextTools = false
     @State private var textOffset = CGSize.zero
+    @State private var hashtagMatches: [[String: Any]] = []
+    @State private var activeHashtag = ""
+    @State private var pendingHashtag = ""
+    @State private var hashtagDescription = ""
+    @State private var showCreateHashtag = false
+    @State private var showHashtagSearch = false
 
     var body: some View {
         NavigationStack {
@@ -1982,6 +2042,46 @@ struct VideoEditorView: View {
                 TextField("Write a caption…", text: $text, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .padding(.horizontal, 14)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onChange(of: text) { _ in updateHashtagSuggestions() }
+                if !activeHashtag.isEmpty {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            Button {
+                                pendingHashtag = activeHashtag
+                                showHashtagSearch = true
+                            } label: {
+                                Label("Search #(activeHashtag)", systemImage: "magnifyingglass")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            Spacer()
+                            Button {
+                                pendingHashtag = activeHashtag
+                                hashtagDescription = ""
+                                showCreateHashtag = true
+                            } label: {
+                                Label("Make hashtag", systemImage: "plus")
+                                    .font(.caption.weight(.semibold))
+                            }
+                        }.padding(10)
+                        ForEach(Array(hashtagMatches.enumerated()), id: .offset) { _, item in
+                            let tag = item["name"] as? String ?? item["tag"] as? String ?? ""
+                            Button {
+                                insertHashtag(tag)
+                            } label: {
+                                HStack {
+                                    Image(systemName: "number").foregroundStyle(.cyan)
+                                    Text(tag.hasPrefix("#") ? tag : "#(tag)")
+                                    Spacer()
+                                    Text("(item["videoCount"] as? Int ?? 0) videos").font(.caption2).foregroundStyle(.secondary)
+                                }.padding(.horizontal, 11).padding(.vertical, 8)
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 14)
+                }
                 Text("Drag text on the video to position it").font(.caption).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             }
@@ -2007,6 +2107,26 @@ struct VideoEditorView: View {
                     }.fontWeight(.bold)
                 }
             }
+            .alert("Create #(pendingHashtag)", isPresented: $showCreateHashtag) {
+                TextField("Description (optional)", text: $hashtagDescription)
+                Button("Create") {
+                    let tag = pendingHashtag
+                    Task {
+                        do {
+                            try await LerizAPI.createHashtag(name: tag, description: hashtagDescription)
+                            await MainActor.run { insertHashtag(tag) }
+                        } catch {
+                            await MainActor.run { pendingHashtag = tag }
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Create this hashtag and add a description for its page.")
+            }
+            .sheet(isPresented: $showHashtagSearch) {
+                HashtagVideosSheet(tag: pendingHashtag)
+            }
             .sheet(isPresented: $showTextTools) {
                 NavigationStack {
                     Form {
@@ -2031,6 +2151,33 @@ struct VideoEditorView: View {
                 }.presentationDetents([.medium, .large]).preferredColorScheme(.dark)
             }
         }.preferredColorScheme(.dark)
+    }
+
+    private func updateHashtagSuggestions() {
+        guard let hash = text.lastIndex(of: "#") else { activeHashtag = ""; hashtagMatches = []; return }
+        let start = text.index(after: hash)
+        let suffix = text[start...]
+        guard !suffix.contains(where: { $0.isWhitespace || $0 == "#" }) else { activeHashtag = ""; hashtagMatches = []; return }
+        let prefix = String(suffix)
+        guard !prefix.isEmpty else { activeHashtag = ""; hashtagMatches = []; return }
+        activeHashtag = prefix
+        Task {
+            let rows = (try? await LerizAPI.searchHashtags(prefix: prefix)) ?? []
+            await MainActor.run {
+                if activeHashtag.caseInsensitiveCompare(prefix) == .orderedSame { hashtagMatches = Array(rows.prefix(25)) }
+            }
+        }
+    }
+
+    private func insertHashtag(_ value: String) {
+        let tag = value.hasPrefix("#") ? value : "#(value)"
+        guard let hash = text.lastIndex(of: "#") else { text += " " + tag + " "; activeHashtag = ""; return }
+        let start = text.index(after: hash)
+        let suffix = text[start...]
+        let end = suffix.firstIndex(where: { $0.isWhitespace || $0 == "#" }) ?? text.endIndex
+        text.replaceSubrange(hash..<end, with: tag + " ")
+        activeHashtag = ""
+        hashtagMatches = []
     }
 
     private func renderTextIntoVideo(text: String, sourceURL: URL, color: UIColor, opacity: Double, border: Bool, gradient: Bool) async -> URL? {
