@@ -489,8 +489,8 @@ struct LoopFeedView: View {
                     Button { showCreate = true } label: { Label("Upload a video", systemImage: "plus").font(.system(size: 15, weight: .bold)).padding(.horizontal, 20).padding(.vertical, 12).background(.white.opacity(0.12), in: Capsule()) }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .top) { topBar }
-                .overlay(alignment: .bottom) { bottomBar }
+                .overlay(alignment: .top) { topBar.opacity(showComments ? 0 : 1).animation(.easeInOut(duration: 0.22), value: showComments) }
+                .overlay(alignment: .bottom) { bottomBar.opacity(showComments ? 0 : 1).animation(.easeInOut(duration: 0.22), value: showComments) }
             } else {
             GeometryReader { geometry in
                 TabView(selection: $selectedClip) {
@@ -988,7 +988,7 @@ struct CommentsSheet: View {
         NavigationStack {
             VStack(spacing: 0) {
                 ZStack {
-                    Color.black
+                    Color.clear
                     PlayerSurface(player: previewPlayer)
                         .frame(width: min(UIScreen.main.bounds.width, UIScreen.main.bounds.height * 0.5 * 9.0 / 16.0), height: UIScreen.main.bounds.height * 0.5)
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -1012,6 +1012,7 @@ struct CommentsSheet: View {
                 .frame(height: UIScreen.main.bounds.height * 0.5)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
+                .onTapGesture { onDismiss() }
                 .gesture(DragGesture(minimumDistance: 8).updating($dragTranslation) { value, state, _ in
                     if value.translation.height > 0 { state = value.translation.height }
                 }.onEnded { value in
