@@ -729,7 +729,7 @@ struct ClipPage: View {
             guard let stringRange = Range(match.range, in: clip.caption),
                   let attributedRange = Range(match.range, in: value) else { continue }
             let tag = String(clip.caption[stringRange].dropFirst())
-            value[attributedRange].link = URL(string: "leriz://hashtag/(tag)")
+            value[attributedRange].link = URL(string: "leriz://hashtag/\(tag)")
             value[attributedRange].foregroundColor = UIColor.cyan
         }
         return value
@@ -2178,7 +2178,7 @@ struct VideoEditorView: View {
                                 pendingHashtag = activeHashtag
                                 showHashtagSearch = true
                             } label: {
-                                Label("Search #(activeHashtag)", systemImage: "magnifyingglass")
+                                Label("Search #\(activeHashtag)", systemImage: "magnifyingglass")
                                     .font(.caption.weight(.semibold))
                             }
                             Spacer()
@@ -2198,9 +2198,9 @@ struct VideoEditorView: View {
                             } label: {
                                 HStack {
                                     Image(systemName: "number").foregroundStyle(.cyan)
-                                    Text(tag.hasPrefix("#") ? tag : "#(tag)")
+                                    Text(tag.hasPrefix("#") ? tag : "#\(tag)")
                                     Spacer()
-                                    Text("(item["videoCount"] as? Int ?? 0) videos").font(.caption2).foregroundStyle(.secondary)
+                                    Text("\(item["videoCount"] as? Int ?? 0) videos").font(.caption2).foregroundStyle(.secondary)
                                 }.padding(.horizontal, 11).padding(.vertical, 8)
                             }.buttonStyle(.plain)
                         }
@@ -2234,7 +2234,7 @@ struct VideoEditorView: View {
                     }.fontWeight(.bold)
                 }
             }
-            .alert("Create #(pendingHashtag)", isPresented: $showCreateHashtag) {
+            .alert("Create #\(pendingHashtag)", isPresented: $showCreateHashtag) {
                 TextField("Description (optional)", text: $hashtagDescription)
                 Button("Create") {
                     let tag = pendingHashtag
@@ -2309,7 +2309,7 @@ struct VideoEditorView: View {
     }
 
     private func insertHashtag(_ value: String) {
-        let tag = value.hasPrefix("#") ? value : "#(value)"
+        let tag = value.hasPrefix("#") ? value : "#\(value)"
         guard let hash = text.lastIndex(of: "#") else { text += " " + tag + " "; activeHashtag = ""; return }
         let start = text.index(after: hash)
         let suffix = text[start...]
