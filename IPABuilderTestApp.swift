@@ -1654,6 +1654,47 @@ struct ProfileVideoPlayerSheet: View {
     let clip: FeedClip
     @Environment(\.dismiss) private var dismiss
     @State private var player = AVPlayer()
+    private var hashtagSuggestionsView: some View {
+        Group {
+            if !activeHashtag.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Button {
+                            pendingHashtag = activeHashtag
+                            showHashtagSearch = true
+                        } label: {
+                            Label("Search #\(activeHashtag)", systemImage: "magnifyingglass")
+                                .font(.caption.weight(.semibold))
+                        }
+                        Spacer()
+                        Button {
+                            pendingHashtag = activeHashtag
+                            hashtagDescription = ""
+                            showCreateHashtag = true
+                        } label: {
+                            Label("Make hashtag", systemImage: "plus")
+                                .font(.caption.weight(.semibold))
+                        }
+                    }.padding(10)
+                    ForEach(Array(hashtagMatches.enumerated()), id: \.offset) { _, item in
+                        let tag = item["name"] as? String ?? item["tag"] as? String ?? ""
+                        let videoCount = item["videoCount"] as? Int ?? 0
+                        Button { insertHashtag(tag) } label: {
+                            HStack {
+                                Image(systemName: "number").foregroundStyle(.cyan)
+                                Text(tag.hasPrefix("#") ? tag : "#\(tag)")
+                                Spacer()
+                                Text("\(videoCount) videos").font(.caption2).foregroundStyle(.secondary)
+                            }.padding(.horizontal, 11).padding(.vertical, 8)
+                        }.buttonStyle(.plain)
+                    }
+                }
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 14)
+            }
+        }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
@@ -2178,44 +2219,7 @@ struct VideoEditorView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .onChange(of: text) { _ in updateHashtagSuggestions() }
-                if !activeHashtag.isEmpty {
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack {
-                            Button {
-                                pendingHashtag = activeHashtag
-                                showHashtagSearch = true
-                            } label: {
-                                Label("Search #\(activeHashtag)", systemImage: "magnifyingglass")
-                                    .font(.caption.weight(.semibold))
-                            }
-                            Spacer()
-                            Button {
-                                pendingHashtag = activeHashtag
-                                hashtagDescription = ""
-                                showCreateHashtag = true
-                            } label: {
-                                Label("Make hashtag", systemImage: "plus")
-                                    .font(.caption.weight(.semibold))
-                            }
-                        }.padding(10)
-                        ForEach(Array(hashtagMatches.enumerated()), id: .offset) { _, item in
-                            let tag = item["name"] as? String ?? item["tag"] as? String ?? ""
-                            let videoCount = item["videoCount"] as? Int ?? 0
-                            Button {
-                                insertHashtag(tag)
-                            } label: {
-                                HStack {
-                                    Image(systemName: "number").foregroundStyle(.cyan)
-                                    Text(tag.hasPrefix("#") ? tag : "#\(tag)")
-                                    Spacer()
-                                    Text("\(videoCount) videos").font(.caption2).foregroundStyle(.secondary)
-                                }.padding(.horizontal, 11).padding(.vertical, 8)
-                            }.buttonStyle(.plain)
-                        }
-                    }
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                    .padding(.horizontal, 14)
-                }
+                hashtagSuggestionsView
                 Text("Drag text on the video to position it").font(.caption).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             }
