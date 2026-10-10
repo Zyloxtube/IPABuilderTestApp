@@ -584,6 +584,7 @@ comments_body = r'''    var body: some View {
 '''
 comments_body = comments_body.replace("dismiss()", "onDismiss()")
 comments_body = comments_body.replace("                    Color.black\n                    PlayerSurface(player: previewPlayer)", "                    Color.clear\n                    PlayerSurface(player: previewPlayer)")
+comments_body = comments_body.replace("                        .onTapGesture {\n                            if previewPlayer.timeControlStatus == .playing {\n                                previewPlayer.pause()\n                                previewIsPlaying = false\n                            } else {\n                                previewPlayer.play()\n                                previewIsPlaying = true\n                            }\n                        }", "                        .onTapGesture { onDismiss() }")
 comments_body = comments_body.replace("            .background(Color.black)\n            .ignoresSafeArea(.container, edges: .all)", "            .background(Color.clear)\n            .ignoresSafeArea(.container, edges: .all)")
 comments_body = comments_body.replace("        .background(Color.black.ignoresSafeArea())", "        .background(Color.clear.ignoresSafeArea())")
 
