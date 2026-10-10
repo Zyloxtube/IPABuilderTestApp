@@ -543,6 +543,7 @@ struct LoopFeedView: View {
     @State private var selectedTab = "For You"
     @Namespace private var feedTabUnderline
     @State private var showComments = false
+    @State private var commentsSheetHeight: CGFloat = UIScreen.main.bounds.height * 0.5
     @State private var showSearch = false
     @State private var showProfile = false
     @State private var selectedProfileClip: FeedClip? = nil
@@ -578,6 +579,7 @@ struct LoopFeedView: View {
                             onSave: { toggleSave(clip.id) },
                             onComments: { withAnimation(.spring(response: 0.42, dampingFraction: 0.88)) { showComments = true } },
                             commentsOpen: showComments,
+                            commentsHeight: commentsSheetHeight,
                             onShare: { showShare = true },
                             onProfile: { selectedProfileClip = clip },
                             onSong: { selectedSongClip = clip },
@@ -606,8 +608,8 @@ struct LoopFeedView: View {
         .onChange(of: selectedTab) { value in Task { await loadFeed(mode: value == "Following" ? "following" : "forYou") } }
         .overlay {
             if showComments && !clips.isEmpty {
-                CommentsSheet(clip: clips[selectedClip]) {
-                    withAnimation(.spring(response: 0.36, dampingFraction: 0.88)) { showComments = false }
+                CommentsSheet(clip: clips[selectedClip], sheetHeight: $commentsSheetHeight) {
+                    withAnimation(.spring(response: 0.30, dampingFraction: 0.90)) { showComments = false }
                 }
                 .transition(.move(edge: .bottom))
                 .zIndex(100)
@@ -806,6 +808,7 @@ struct ClipPage: View {
     let onSave: () -> Void
     let onComments: () -> Void
     let commentsOpen: Bool
+    let commentsHeight: CGFloat
     let onShare: () -> Void
     let onProfile: () -> Void
     let onSong: () -> Void
@@ -832,9 +835,11 @@ struct ClipPage: View {
                 .ignoresSafeArea()
             if !videoFailed, let url = URL(string: clip.videoURL) {
                 PlayerSurface(player: player)
-                    .ignoresSafeArea()
-                    .scaleEffect(commentsOpen ? 0.5 : 1, anchor: .top)
-                    .animation(.spring(response: 0.42, dampingFraction: 0.88), value: commentsOpen)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: commentsOpen ? max(1, UIScreen.main.bounds.height - commentsHeight) : UIScreen.main.bounds.height, alignment: .top)
+                    .clipped()
+                    .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.92), value: commentsHeight)
+                    .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.92), value: commentsOpen)
                     .onAppear {
                         player.replaceCurrentItem(with: AVPlayerItem(url: url))
                         player.isMuted = false
@@ -1080,8 +1085,10 @@ struct CommentsSheet: View {
     @State private var replyToID: String? = nil
     @State private var replyToAuthor = ""
     @FocusState private var commentFieldFocused: Bool
-    @State private var sheetHeight: CGFloat = UIScreen.main.bounds.height * 0.56
-    @State private var dragTranslation: CGFloat = 0
+    @Binding var sheetHeight: CGFloat
+    @State private var dragStartHeight: CGFloat = UIScreen.main.bounds.height * 0.5
+    @State private var isDraggingSheet = false
+    @State private var commentDateLabels: [String] = []
     @State private var selectedCommentProfile: FeedClip? = nil
     @State private var commentAvatarURLs: [String] = []
     @State private var currentAvatarURL = ""
@@ -1108,19 +1115,26 @@ struct CommentsSheet: View {
                 .padding(.bottom, 10)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 4)
-                    .onChanged { value in dragTranslation = max(0, value.translation.height) }
-                    .onEnded { value in
-                        let threshold = UIScreen.main.bounds.height * 0.20
-                        if value.translation.height >= threshold {
-                            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) { onDismiss() }
-                        } else {
-                            let proposed = sheetHeight - value.translation.height
-                            withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.88)) {
-                                sheetHeight = min(UIScreen.main.bounds.height * 0.94, max(UIScreen.main.bounds.height * 0.38, proposed))
-                                dragTranslation = 0
-                            }
+                .gesture(DragGesture(minimumDistance: 3)
+                    .onChanged { value in
+                        if !isDraggingSheet {
+                            dragStartHeight = sheetHeight
+                            isDraggingSheet = true
                         }
+                        let screenHeight = UIScreen.main.bounds.height
+                        sheetHeight = min(screenHeight * 0.98, max(screenHeight * 0.40, dragStartHeight - value.translation.height))
+                    }
+                    .onEnded { value in
+                        let screenHeight = UIScreen.main.bounds.height
+                        let proposed = dragStartHeight - value.translation.height
+                        isDraggingSheet = false
+                        if value.translation.height > 0 && proposed <= screenHeight * 0.53 {
+                            withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.92)) { onDismiss() }
+                            return
+                        }
+                        let stops = [screenHeight * 0.50, screenHeight * 0.75, screenHeight * 0.98]
+                        let target = stops.min(by: { abs($0 - proposed) < abs($1 - proposed) }) ?? screenHeight * 0.50
+                        withAnimation(.interactiveSpring(response: 0.30, dampingFraction: 0.90)) { sheetHeight = target }
                     })
                 .onAppear { Task { await loadComments(); await loadMyAvatar() } }
 
@@ -1159,7 +1173,7 @@ struct CommentsSheet: View {
                                     }
                                     Text(text).font(.system(size: 14))
                                     HStack(spacing: 14) {
-                                        Text("2h").font(.caption).foregroundStyle(.secondary)
+                                        Text(index < commentDateLabels.count ? commentDateLabels[index] : "").font(.caption).foregroundStyle(.secondary)
                                         Button("Reply") {
                                             replyToID = commentID
                                             replyToAuthor = index < commentAuthors.count ? commentAuthors[index] : "user"
@@ -1319,7 +1333,7 @@ struct CommentsSheet: View {
             Text("This comment and its replies will be deleted.")
         }
         .preferredColorScheme(.dark)
-        .frame(height: max(UIScreen.main.bounds.height * 0.38, sheetHeight - dragTranslation), alignment: .top)
+        .frame(height: max(UIScreen.main.bounds.height * 0.40, sheetHeight), alignment: .top)
         .frame(maxWidth: .infinity, alignment: .top)
         .background(Color(uiColor: .systemBackground).ignoresSafeArea())
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
@@ -1329,6 +1343,39 @@ struct CommentsSheet: View {
             let saved = (try? JSONDecoder().decode([String].self, from: Data(likedCommentIDsJSON.utf8))) ?? []
             likedComments = Set(saved)
         }
+    }
+
+    private static func relativeCommentDate(_ row: [String: Any]) -> String {
+        let keys = ["createdAt", "created_at", "created", "timestamp", "date"]
+        var date: Date?
+        for key in keys {
+            guard let value = row[key] else { continue }
+            if let number = value as? NSNumber {
+                let raw = number.doubleValue
+                date = Date(timeIntervalSince1970: raw > 10_000_000_000 ? raw / 1000 : raw)
+                break
+            }
+            if let string = value as? String {
+                if let seconds = Double(string) {
+                    date = Date(timeIntervalSince1970: seconds > 10_000_000_000 ? seconds / 1000 : seconds)
+                    break
+                }
+                let fractional = ISO8601DateFormatter()
+                fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let parsed = fractional.date(from: string) { date = parsed; break }
+                let standard = ISO8601DateFormatter()
+                if let parsed = standard.date(from: string) { date = parsed; break }
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+                if let parsed = formatter.date(from: string) { date = parsed; break }
+            }
+        }
+        guard let date else { return "" }
+        if Date().timeIntervalSince(date) < 60 { return "now" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     private func loadMyAvatar() async {
@@ -1383,6 +1430,7 @@ struct CommentsSheet: View {
                     return value as? String
                 }
                 commentEdited = orderedRows.map { $0["edited"] as? Bool ?? false }
+                commentDateLabels = orderedRows.map { Self.relativeCommentDate($0) }
                 commentError = ""
             }
         } catch {
@@ -1438,6 +1486,7 @@ struct CommentsSheet: View {
                 commentAvatarURLs = kept.compactMap { $0 < commentAvatarURLs.count ? commentAvatarURLs[$0] : nil }
                 commentParentIDs = kept.map { $0 < commentParentIDs.count ? commentParentIDs[$0] : nil }
                 commentEdited = kept.map { $0 < commentEdited.count ? commentEdited[$0] : false }
+                commentDateLabels = kept.map { $0 < commentDateLabels.count ? commentDateLabels[$0] : "" }
                 likedComments.subtract(removedIDs)
                 likedCommentIDsJSON = String(data: (try? JSONEncoder().encode(Array(likedComments))) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
                 deletingCommentID = nil
@@ -1466,11 +1515,12 @@ struct CommentsSheet: View {
                     if let parentID, let parentIndex = commentIDs.firstIndex(of: parentID) {
                         insertionIndex = parentIndex + 1
                     } else {
-                        insertionIndex = 0
+                        insertionIndex = posted.count
                     }
                     let safeIndex = min(insertionIndex, posted.count)
                     posted.insert(displayedText, at: safeIndex)
-                    commentIDs.insert(newID, at: min(insertionIndex, commentIDs.count))
+                    commentDateLabels.insert("now", at: min(safeIndex, commentDateLabels.count))
+                    commentIDs.insert(newID, at: min(safeIndex, commentIDs.count))
                     commentAuthors.insert(currentUsername.isEmpty ? "user" : currentUsername, at: min(insertionIndex, commentAuthors.count))
                     commentAvatarURLs.insert("", at: min(insertionIndex, commentAvatarURLs.count))
                     commentParentIDs.insert(actualParent, at: min(insertionIndex, commentParentIDs.count))
@@ -2223,8 +2273,9 @@ struct AccountsListSheet: View {
                                 Button {
                                     Task {
                                         do {
-                                            try await LerizAPI.follow(username: name)
-                                            await MainActor.run { following.insert(name.lowercased()) }
+                                            let cleanName = name.trimmingCharacters(in: CharacterSet(charactersIn: "@ \n\t"))
+                                            try await LerizAPI.follow(username: cleanName)
+                                            await MainActor.run { following.insert(cleanName.lowercased()) }
                                         } catch {
                                             await MainActor.run { self.error = "Follow failed: \(error.localizedDescription)" }
                                         }
@@ -2250,7 +2301,13 @@ struct AccountsListSheet: View {
 
     @MainActor
     private func loadAccounts() async {
-        let safe = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
+        let cleanUsername = username.trimmingCharacters(in: CharacterSet(charactersIn: "@ \n\t"))
+        guard !cleanUsername.isEmpty else {
+            error = "Could not load \(kind): username is missing."
+            loading = false
+            return
+        }
+        let safe = cleanUsername.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? cleanUsername
         do {
             let (data, _) = try await LerizAPI.request("api/users/\(safe)/\(kind)")
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
