@@ -321,6 +321,16 @@ r'''        .fullScreenCover(isPresented: $showComments) { if !clips.isEmpty { C
 )
 
 # Replace only the CommentsSheet body, keeping its existing networking/actions.
+sub(
+r'''    @State private var previewPlayer = AVPlayer()
+    @FocusState private var commentFieldFocused: Bool''',
+r'''    @State private var previewPlayer = AVPlayer()
+    @State private var previewIsPlaying = true
+    @State private var panelHeight: CGFloat = 0
+    @State private var panelHeightAtDragStart: CGFloat? = nil
+    @FocusState private var commentFieldFocused: Bool''',
+"resizable comments panel state"
+)
 comments_start = s.index("    var body: some View {", s.index("struct CommentsSheet: View {"))
 comments_end = s.index("    private func toggleCommentLike", comments_start)
 comments_body = r'''    var body: some View {
@@ -383,13 +393,15 @@ comments_body = r'''    var body: some View {
                         .gesture(
                             DragGesture(minimumDistance: 2)
                                 .onChanged { value in
-                                    panelHeight = min(max(panelHeight - value.translation.height, totalHeight * 0.38), totalHeight * 0.82)
+                                    if panelHeightAtDragStart == nil { panelHeightAtDragStart = panelHeight }
+                                    panelHeight = min(max((panelHeightAtDragStart ?? panelHeight) - value.translation.height, totalHeight * 0.38), totalHeight * 0.82)
                                 }
+                                .onEnded { _ in panelHeightAtDragStart = nil }
                         )
                     HStack {
                         Text("Comments")
                             .font(.system(size: 17, weight: .bold))
-                        Text("\\(posted.count)")
+                        Text("\(posted.count)")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -423,8 +435,8 @@ comments_body = r'''    var body: some View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.top, 28)
                             }
-                            ForEach(Array(posted.enumerated()), id: \\.offset) { index, text in
-                                let commentID = index < commentIDs.count ? commentIDs[index] : "local-\\(index)"
+                            ForEach(Array(posted.enumerated()), id: \.offset) { index, text in
+                                let commentID = index < commentIDs.count ? commentIDs[index] : "local-\(index)"
                                 let isReply = index < commentParentIDs.count && commentParentIDs[index] != nil
                                 HStack(alignment: .top, spacing: 10) {
                                     Circle()
@@ -441,7 +453,7 @@ comments_body = r'''    var body: some View {
                                             Button("Reply") {
                                                 replyToID = commentID
                                                 replyToAuthor = index < commentAuthors.count ? commentAuthors[index] : "user"
-                                                comment = "@\\(replyToAuthor) "
+                                                comment = "@\(replyToAuthor) "
                                                 commentFieldFocused = true
                                             }
                                             .font(.caption.weight(.medium))
@@ -468,7 +480,7 @@ comments_body = r'''    var body: some View {
                     Divider().overlay(Color.white.opacity(0.08))
                     if let replyToID {
                         HStack(spacing: 8) {
-                            Text("Replying to @\\(replyToAuthor)")
+                            Text("Replying to @\(replyToAuthor)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             Spacer()
@@ -508,7 +520,7 @@ comments_body = r'''    var body: some View {
                         .padding(.vertical, 8)
                         .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 21))
                         Menu {
-                            ForEach(["😀","😂","🥹","😍","🔥","❤️","😭","👏","✨","🙏","💀","🥰"], id: \\.self) { emoji in
+                            ForEach(["😀","😂","🥹","😍","🔥","❤️","😭","👏","✨","🙏","💀","🥰"], id: \.self) { emoji in
                                 Button(emoji) { comment.append(emoji) }
                             }
                         } label: {
