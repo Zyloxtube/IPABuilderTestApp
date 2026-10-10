@@ -1499,7 +1499,8 @@ final class LoopScreenRecorder: ObservableObject {
     private var audioInput: AVAssetWriterInput?
     private var sessionStarted = false
     private var stopping = false
-    private var startCompletion: ((String?) -> Void)?    private let queue = DispatchQueue(label: "loop.screen-recorder")
+    private var startCompletion: ((String?) -> Void)?
+    private let queue = DispatchQueue(label: "loop.screen-recorder")
 
     func start(completion: @escaping (String?) -> Void) {
         outputURL = nil
