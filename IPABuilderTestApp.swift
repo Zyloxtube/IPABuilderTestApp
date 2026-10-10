@@ -838,7 +838,7 @@ struct ClipPage: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: commentsOpen ? max(1, UIScreen.main.bounds.height - commentsHeight) : UIScreen.main.bounds.height, alignment: .top)
                     .clipped()
-                    .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.92), value: commentsHeight)
+                    .frame(maxHeight: .infinity, alignment: .top)
                     .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.92), value: commentsOpen)
                     .onAppear {
                         player.replaceCurrentItem(with: AVPlayerItem(url: url))
