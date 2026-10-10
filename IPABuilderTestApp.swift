@@ -1243,6 +1243,8 @@ struct ProfileSheet: View {
     @State private var showProfileMenu = false
     @State private var showNotifications = false
     @State private var showSavedVideos = false
+    @State private var selectedAvatar: PhotosPickerItem?
+    @AppStorage("lerizProfileImageData") private var profileImageData = ""
     @AppStorage("lerizAuthToken") private var authToken = ""
     @AppStorage("lerizUsername") private var currentUsername = ""
     var body: some View {
@@ -1250,8 +1252,19 @@ struct ProfileSheet: View {
             ScrollView {
                 VStack(spacing: 18) {
                     HStack(spacing: 16) {
-                        Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 88, height: 88).overlay(Image(systemName: "person").font(.system(size: 40)))
+                        PhotosPicker(selection: $selectedAvatar, matching: .images) {
+                            Group {
+                                if let data = Data(base64Encoded: profileImageData), let image = UIImage(data: data) {
+                                    Image(uiImage: image).resizable().scaledToFill()
+                                } else {
+                                    Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        .overlay(Image(systemName: "person.crop.circle.fill").font(.system(size: 40)).foregroundStyle(.white))
+                                }
+                            }
+                            .frame(width: 88, height: 88).clipShape(Circle())
+                            .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
                         VStack(alignment: .leading, spacing: 6) {
                             Text(clip?.creator ?? (currentUsername.isEmpty ? "Leriz user" : currentUsername)).font(.title3.bold())
                             Text(clip?.handle ?? "@\(currentUsername.isEmpty ? "user" : currentUsername)").font(.subheadline).foregroundStyle(.secondary)
@@ -1299,6 +1312,16 @@ struct ProfileSheet: View {
             .sheet(isPresented: $showEdit) { EditProfileDemo() }
             .sheet(isPresented: $showNotifications) { InboxSheet() }
             .sheet(isPresented: $showSavedVideos) { SavedVideosSheet() }
+            .onChange(of: selectedAvatar) { item in
+                guard let item else { return }
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data),
+                       let jpeg = image.jpegData(compressionQuality: 0.82) {
+                        await MainActor.run { profileImageData = jpeg.base64EncodedString() }
+                    }
+                }
+            }
         }.preferredColorScheme(.dark)
     }
     private func stat(_ n: String, _ label: String) -> some View {
@@ -1459,6 +1482,7 @@ struct CreateVideoPage: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var isImporting = false
     @State private var importError: String?
+    @State private var recentThumbnail: UIImage?
     @StateObject private var recorder = LoopCameraRecorder()
 
     var body: some View {
@@ -1497,9 +1521,16 @@ struct CreateVideoPage: View {
 
                 HStack {
                     PhotosPicker(selection: $selectedPhoto, matching: .any(of: [.videos, .images]), photoLibrary: .shared()) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.12)).frame(width: 54, height: 58)
-                            Image(systemName: "photo.on.rectangle").font(.system(size: 23)).foregroundStyle(.white)
+                        ZStack(alignment: .bottomTrailing) {
+                            Group {
+                                if let recentThumbnail {
+                                    Image(uiImage: recentThumbnail).resizable().scaledToFill().frame(width: 54, height: 58).clipped()
+                                } else {
+                                    RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.12)).frame(width: 54, height: 58)
+                                        .overlay(Image(systemName: "photo.on.rectangle").font(.system(size: 23)).foregroundStyle(.white))
+                                }
+                            }.frame(width: 54, height: 58).clipShape(RoundedRectangle(cornerRadius: 12))
+                            Image(systemName: "plus.circle.fill").font(.system(size: 17)).symbolRenderingMode(.palette).foregroundStyle(.white, .cyan).offset(x: 4, y: 4)
                             if isImporting { ProgressView().tint(.white).scaleEffect(0.7) }
                         }
                     }
@@ -1541,7 +1572,7 @@ struct CreateVideoPage: View {
             }
         }
         .preferredColorScheme(.dark)
-        .task { await requestPermissions() }
+        .task { await requestPermissions(); loadRecentThumbnail() }
         .onDisappear { recorder.stopIfNeeded() }
         .onChange(of: recorder.outputURL) { value in
             if let value { recordedURL = value; isRecording = false; showEditor = true }
@@ -1562,6 +1593,23 @@ struct CreateVideoPage: View {
         }
     }
 
+    private func loadRecentThumbnail() {
+        PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
+            guard status == .authorized || status == .limited else { return }
+            let options = PHFetchOptions()
+            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            options.fetchLimit = 1
+            options.predicate = NSPredicate(format: "mediaType == %d OR mediaType == %d", PHAssetMediaType.video.rawValue, PHAssetMediaType.image.rawValue)
+            guard let asset = PHAsset.fetchAssets(with: options).firstObject else { return }
+            let requestOptions = PHImageRequestOptions()
+            requestOptions.deliveryMode = .fastFormat
+            requestOptions.resizeMode = .fast
+            PHImageManager.default().requestImage(for: asset, targetSize: CGSize(width: 180, height: 220), contentMode: .aspectFill, options: requestOptions) { image, _ in
+                if let image { DispatchQueue.main.async { recentThumbnail = image } }
+            }
+        }
+    }
+
     @MainActor
     private func importSelectedMedia(_ item: PhotosPickerItem) async {
         isImporting = true
@@ -1577,10 +1625,12 @@ struct CreateVideoPage: View {
                 try data.write(to: target, options: .atomic)
                 recordedURL = target
                 showEditor = true
+                loadRecentThumbnail()
                 permissionMessage = nil
             } else if let image = UIImage(data: data), let stillVideo = await StillImageVideoExporter.export(image: image) {
                 recordedURL = stillVideo
                 showEditor = true
+                loadRecentThumbnail()
                 permissionMessage = nil
             } else {
                 permissionMessage = "This image could not be prepared for upload."
