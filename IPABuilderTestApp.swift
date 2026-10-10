@@ -954,8 +954,13 @@ struct CreateVideoPage: View {
                 ZStack(alignment: .bottom) {
                     Group {
                         if permissionsGranted {
-                            if isBackCamera { BackCameraPreview() }
-                            else { FaceCameraView(effect: filters[selectedFilter].1) }
+                            if isBackCamera {
+                                BackCameraPreview(position: .back)
+                            } else if ARFaceTrackingConfiguration.isSupported {
+                                FaceCameraView(effect: filters[selectedFilter].1)
+                            } else {
+                                BackCameraPreview(position: .front)
+                            }
                         } else {
                             ZStack {
                                 Color.black
@@ -1207,11 +1212,12 @@ struct SongDetailSheet: View {
 }
 
 struct BackCameraPreview: UIViewRepresentable {
+    var position: AVCaptureDevice.Position = .back
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> UIView {
         let view = UIView(frame: .zero); view.backgroundColor = .black
         let session = AVCaptureSession(); session.sessionPreset = .high
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position),
               let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else { return view }
         session.addInput(input)
         let layer = AVCaptureVideoPreviewLayer(session: session); layer.videoGravity = .resizeAspectFill
