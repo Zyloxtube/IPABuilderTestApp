@@ -812,6 +812,7 @@ struct ClipPage: View {
     @State private var isPlaying = true
     @State private var videoFailed = false
     @State private var isFollowing = false
+    @AppStorage("lerizUsername") private var currentUsername = ""
     @State private var isMuted = false
     @State private var tappedHashtag = ""
     @State private var showHashtagPage = false
@@ -888,15 +889,17 @@ struct ClipPage: View {
                                 }
                             }
                             Text("·").foregroundStyle(.white.opacity(0.6))
-                            Button {
-                                withAnimation(.spring(response: 0.28, dampingFraction: 0.62)) { isFollowing.toggle() }
-                                onFollow()
-                            } label: {
-                                Text(isFollowing ? "Following" : "Follow")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(isFollowing ? .white.opacity(0.8) : .cyan)
+                            if clip.handle.trimmingCharacters(in: CharacterSet(charactersIn: "@")).caseInsensitiveCompare(currentUsername) != .orderedSame {
+                                Button {
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.62)) { isFollowing.toggle() }
+                                    onFollow()
+                                } label: {
+                                    Text(isFollowing ? "Following" : "Follow")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(isFollowing ? .white.opacity(0.8) : .cyan)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                         Text(clip.caption)
                             .font(.system(size: 14, weight: .medium))
@@ -932,7 +935,7 @@ struct ClipPage: View {
                                 LerizAvatarView(urlString: clip.avatarURL, size: 46, fallbackColor: clip.accent)
                             }
                             .buttonStyle(.plain)
-                            if !isFollowing {
+                            if !isFollowing && clip.handle.trimmingCharacters(in: CharacterSet(charactersIn: "@")).caseInsensitiveCompare(currentUsername) != .orderedSame {
                                 Button {
                                     withAnimation(.spring(response: 0.28, dampingFraction: 0.58)) { isFollowing = true }
                                     onFollow()
@@ -1808,6 +1811,9 @@ struct ProfileSheet: View {
     @State private var profileLoading = true
     @State private var profileLoadError = ""
     @State private var selectedProfileVideo: FeedClip?
+    @State private var showFollowersList = false
+    @State private var showFollowingList = false
+    @State private var selectedAccountProfile: FeedClip?
     @AppStorage("lerizProfileImageData") private var profileImageData = ""
     @AppStorage("lerizAuthToken") private var authToken = ""
     @AppStorage("lerizUsername") private var currentUsername = ""
@@ -1846,8 +1852,12 @@ struct ProfileSheet: View {
                         Spacer()
                     }.padding(.horizontal, 18).padding(.top, 15)
                     HStack {
-                        stat(String(profileUser["following"] as? Int ?? 0), "Following")
-                        stat(String(profileUser["followers"] as? Int ?? 0), "Followers")
+                        Button { showFollowingList = true } label: {
+                            stat(String(profileUser["following"] as? Int ?? 0), "Following")
+                        }.buttonStyle(.plain)
+                        Button { showFollowersList = true } label: {
+                            stat(String(profileUser["followers"] as? Int ?? 0), "Followers")
+                        }.buttonStyle(.plain)
                         stat(String(profileVideos.reduce(0) { $0 + (Int($1.likes) ?? 0) }), "Likes")
                     }
                     HStack(spacing: 10) {
@@ -1856,7 +1866,7 @@ struct ProfileSheet: View {
                         } else {
                             Button {
                                 Task {
-                                    do { try await LerizAPI.follow(username: (profileUser["id"] as? String) ?? "") }
+                                    do { try await LerizAPI.follow(username: (profileUser["username"] as? String) ?? (clip?.handle.replacingOccurrences(of: "@", with: "") ?? "")) }
                                     catch { await MainActor.run { profileLoadError = error.localizedDescription } }
                                 }
                             } label: { Text(profileUser["isFollowing"] as? Bool == true ? "Following" : "Follow").font(.system(size: 14, weight: .bold)).frame(maxWidth: .infinity).padding(12).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
@@ -1877,11 +1887,18 @@ struct ProfileSheet: View {
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3)], spacing: 3) {
                             ForEach(profileVideos) { video in
                                 Button { selectedProfileVideo = video } label: {
-                                    ZStack(alignment: .bottomLeading) {
-                                        RoundedRectangle(cornerRadius: 5).fill(LinearGradient(colors: [video.accent.opacity(0.65), .black], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                        Image(systemName: "play.fill").font(.system(size: 22)).foregroundStyle(.white.opacity(0.85))
-                                        Text(video.caption.isEmpty ? "Video" : video.caption).font(.system(size: 10, weight: .medium)).lineLimit(2).padding(5)
-                                    }.frame(height: 155)
+                                    SongGridVideoTile(clip: video)
+                                        .aspectRatio(9.0 / 16.0, contentMode: .fit)
+                                        .overlay(alignment: .bottomLeading) {
+                                            HStack(spacing: 5) {
+                                                Image(systemName: "eye").font(.system(size: 12, weight: .semibold))
+                                                Text(video.views.formatted()).font(.system(size: 11, weight: .bold))
+                                            }
+                                            .foregroundStyle(.white)
+                                            .padding(.leading, 9).padding(.bottom, 9)
+                                            .shadow(color: .black.opacity(0.9), radius: 3)
+                                        }
+                                        .clipped()
                                 }.buttonStyle(.plain)
                             }
                         }.padding(.horizontal, 3)
@@ -1927,6 +1944,13 @@ struct ProfileSheet: View {
             .sheet(isPresented: $showEdit) { EditProfileDemo() }
             .sheet(isPresented: $showNotifications) { InboxSheet() }
             .sheet(isPresented: $showSavedVideos) { SavedVideosSheet() }
+            .sheet(isPresented: $showFollowersList) {
+                AccountsListSheet(username: (profileUser["username"] as? String) ?? (clip?.handle.replacingOccurrences(of: "@", with: "") ?? currentUsername), kind: "followers") { selectedAccountProfile = $0 }
+            }
+            .sheet(isPresented: $showFollowingList) {
+                AccountsListSheet(username: (profileUser["username"] as? String) ?? (clip?.handle.replacingOccurrences(of: "@", with: "") ?? currentUsername), kind: "following") { selectedAccountProfile = $0 }
+            }
+            .fullScreenCover(item: $selectedAccountProfile) { person in ProfileSheet(clip: person) }
             .sheet(item: $selectedProfileVideo) { video in ProfileVideoPlayerSheet(clip: video) }
             .task { await loadProfile() }
             .alert("Account action failed", isPresented: Binding(get: { !showDeleteError.isEmpty }, set: { if !$0 { showDeleteError = "" } })) {
@@ -1991,27 +2015,116 @@ struct ProfileSheet: View {
     }
 }
 
+struct AccountsListSheet: View {
+    let username: String
+    let kind: String
+    let onOpenProfile: (FeedClip) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var accounts: [[String: Any]] = []
+    @State private var loading = true
+    @State private var error = ""
+    @State private var following = Set<String>()
+    @AppStorage("lerizUsername") private var currentUsername = ""
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if loading {
+                    ProgressView("Loading accounts…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if !error.isEmpty {
+                    Text(error).foregroundStyle(.secondary).multilineTextAlignment(.center).padding()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if accounts.isEmpty {
+                    Text("No accounts to show").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List(accounts.indices, id: \.self) { index in
+                        let account = accounts[index]
+                        let name = account["username"] as? String ?? account["handle"] as? String ?? "user"
+                        let display = account["displayName"] as? String ?? account["display_name"] as? String ?? name
+                        HStack(spacing: 12) {
+                            Button {
+                                let avatar = account["avatarURL"] as? String ?? account["avatar_url"] as? String ?? ""
+                                let person = FeedClip(id: abs(name.hashValue % 2_000_000_000), creator: display, handle: "@\(name)", caption: "", tags: "", song: "", likes: "0", comments: "0", views: 0, accent: .purple, videoURL: "", symbol: "person", avatarURL: avatar)
+                                onOpenProfile(person)
+                                dismiss()
+                            } label: {
+                                HStack(spacing: 12) {
+                                    LerizAvatarView(urlString: account["avatarURL"] as? String ?? account["avatar_url"] as? String ?? "", size: 46, fallbackColor: .purple)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(display).font(.system(size: 14, weight: .semibold)).foregroundStyle(.primary)
+                                        Text("@\(name)").font(.system(size: 12)).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }.buttonStyle(.plain)
+                            Spacer(minLength: 4)
+                            if name.caseInsensitiveCompare(currentUsername) != .orderedSame {
+                                Button {
+                                    Task {
+                                        do {
+                                            try await LerizAPI.follow(username: name)
+                                            await MainActor.run { following.insert(name.lowercased()) }
+                                        } catch {
+                                            await MainActor.run { self.error = "Follow failed: \(error.localizedDescription)" }
+                                        }
+                                    }
+                                } label: {
+                                    Text(following.contains(name.lowercased()) ? "Following" : "Follow")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .padding(.horizontal, 14).padding(.vertical, 8)
+                                        .background(following.contains(name.lowercased()) ? Color.white.opacity(0.12) : Color.cyan.opacity(0.25), in: Capsule())
+                                }.buttonStyle(.plain)
+                            }
+                        }.listRowBackground(Color.black)
+                    }.listStyle(.plain).scrollContentBackground(.hidden)
+                }
+            }
+            .background(Color.black)
+            .navigationTitle(kind == "followers" ? "Followers" : "Following")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .task { await loadAccounts() }
+        }.preferredColorScheme(.dark)
+    }
+
+    @MainActor
+    private func loadAccounts() async {
+        let safe = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? username
+        do {
+            let (data, _) = try await LerizAPI.request("api/users/\(safe)/\(kind)")
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            accounts = json["users"] as? [[String: Any]] ?? json["accounts"] as? [[String: Any]] ?? json[kind] as? [[String: Any]] ?? []
+            error = ""
+        } catch {
+            error = "Could not load \(kind): \(error.localizedDescription)"
+        }
+        loading = false
+    }
+}
+
 struct ProfileVideoPlayerSheet: View {
     let clip: FeedClip
     @Environment(\.dismiss) private var dismiss
-    @State private var player = AVPlayer()
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 12) {
-                VideoPlayer(player: player).background(.black)
-                Text(clip.caption).font(.body).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
-            }
-            .background(Color.black)
-            .navigationTitle(clip.handle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { player.pause(); dismiss() } } }
-            .onAppear { if let url = URL(string: clip.videoURL) { player.replaceCurrentItem(with: AVPlayerItem(url: url)); player.play() } }
-            .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { note in
-                guard let ended = note.object as? AVPlayerItem, ended === player.currentItem else { return }
-                player.seek(to: .zero) { _ in player.play() }
-            }
-            .onDisappear { player.pause() }
-        }.preferredColorScheme(.dark)
+        ZStack(alignment: .topTrailing) {
+            ClipPage(
+                clip: clip,
+                isActive: true,
+                isLiked: clip.initiallyLiked,
+                isSaved: clip.initiallySaved,
+                onLike: {},
+                onSave: {},
+                onComments: {},
+                commentsOpen: false,
+                onShare: {},
+                onProfile: {},
+                onSong: {},
+                onFollow: {}
+            )
+            Button { dismiss() } label: {
+                Image(systemName: "xmark").font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white).padding(10).background(.black.opacity(0.5), in: Circle())
+            }.padding(.top, 54).padding(.trailing, 18)
+        }.background(Color.black).ignoresSafeArea()
     }
 }
 
@@ -2863,6 +2976,15 @@ struct SongGridVideoTile: View {
             .frame(maxWidth: .infinity)
             .aspectRatio(9.0 / 16.0, contentMode: .fit)
             .background(clip.accent.gradient)
+            .overlay(alignment: .bottomLeading) {
+                HStack(spacing: 5) {
+                    Image(systemName: "eye").font(.system(size: 12, weight: .semibold))
+                    Text(clip.views.formatted()).font(.system(size: 11, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .padding(.leading, 9).padding(.bottom, 9)
+                .shadow(color: .black.opacity(0.9), radius: 3)
+            }
             .clipped()
             .onAppear {
                 guard let url = URL(string: clip.videoURL) else { return }
