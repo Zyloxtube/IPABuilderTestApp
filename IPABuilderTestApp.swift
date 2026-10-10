@@ -1453,7 +1453,13 @@ struct ProfileSheet: View {
                     HStack(spacing: 16) {
                         PhotosPicker(selection: $selectedAvatar, matching: .images) {
                             Group {
-                                if let data = Data(base64Encoded: profileImageData), let image = UIImage(data: data) {
+                                if clip != nil, let rawAvatar = profileUser["avatarURL"] as? String, !rawAvatar.isEmpty,
+                                   let avatarURL = URL(string: rawAvatar.hasPrefix("http") ? rawAvatar : LerizAPI.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + (rawAvatar.hasPrefix("/") ? rawAvatar : "/\(rawAvatar)")) {
+                                    AsyncImage(url: avatarURL) { phase in
+                                        if let image = phase.image { image.resizable().scaledToFill() }
+                                        else { Circle().fill(.white.opacity(0.08)).overlay(Image(systemName: "person.fill").foregroundStyle(.white)) }
+                                    }
+                                } else if let data = Data(base64Encoded: profileImageData), let image = UIImage(data: data) {
                                     Image(uiImage: image).resizable().scaledToFill()
                                 } else {
                                     Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
@@ -1482,10 +1488,19 @@ struct ProfileSheet: View {
                         stat(String(profileVideos.reduce(0) { $0 + (Int($1.likes) ?? 0) }), "Likes")
                     }
                     HStack(spacing: 10) {
-                        Button { showEdit = true } label: { Text("Edit profile").font(.system(size: 14, weight: .bold)).frame(maxWidth: .infinity).padding(12).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
+                        if clip == nil || (clip?.handle.replacingOccurrences(of: "@", with: "").caseInsensitiveCompare(currentUsername) == .orderedSame) {
+                            Button { showEdit = true } label: { Text("Edit profile").font(.system(size: 14, weight: .bold)).frame(maxWidth: .infinity).padding(12).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
+                        } else {
+                            Button {
+                                Task {
+                                    do { try await LerizAPI.follow(username: (profileUser["id"] as? String) ?? "") }
+                                    catch { await MainActor.run { profileLoadError = error.localizedDescription } }
+                                }
+                            } label: { Text(profileUser["isFollowing"] as? Bool == true ? "Following" : "Follow").font(.system(size: 14, weight: .bold)).frame(maxWidth: .infinity).padding(12).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
+                        }
                         Button {} label: { Image(systemName: "person.badge.plus").frame(width: 46, height: 42).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
                     }.padding(.horizontal, 18)
-                    Text(profileBio).font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
+                    Text((profileUser["bio"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? profileBio).font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
                     HStack(spacing: 0) {
                         tab("square.grid.2x2", 0)
                         tab("heart", 1)
