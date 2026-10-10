@@ -84,8 +84,14 @@ struct LerizAPI {
         _ = try await request("api/videos", method: "POST", body: body, contentType: "multipart/form-data; boundary=\(boundary)")
     }
 
-    static func toggleLike(videoID: String) async throws { _ = try await request("api/videos/\(videoID)/like", method: "POST", body: Data("{}".utf8)) }
-    static func toggleSave(videoID: String) async throws { _ = try await request("api/videos/\(videoID)/save", method: "POST", body: Data("{}".utf8)) }
+    static func toggleLike(videoID: String) async throws -> [String: Any] {
+        let (data, _) = try await request("api/videos/\(videoID)/like", method: "POST", body: Data("{}".utf8))
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
+    static func toggleSave(videoID: String) async throws -> [String: Any] {
+        let (data, _) = try await request("api/videos/\(videoID)/save", method: "POST", body: Data("{}".utf8))
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
     static func fetchComments(videoID: String) async throws -> [[String: Any]] {
         let (data, _) = try await request("api/videos/\(videoID)/comments")
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
@@ -580,13 +586,36 @@ struct LoopFeedView: View {
     private func toggleLike(_ id: Int) {
         if likedIDs.contains(id) { likedIDs.remove(id) } else { likedIDs.insert(id) }
         guard let videoID = serverID(for: id) else { return }
-        Task { do { try await LerizAPI.toggleLike(videoID: videoID) } catch { await MainActor.run { feedError = error.localizedDescription } } }
+        Task {
+            do {
+                let result = try await LerizAPI.toggleLike(videoID: videoID)
+                await MainActor.run {
+                    if let liked = result["liked"] as? Bool {
+                        if liked { likedIDs.insert(id) } else { likedIDs.remove(id) }
+                    }
+                    if let count = result["likes"] as? Int, let index = clips.firstIndex(where: { $0.id == id }) { clips[index] = withLikes(clips[index], count: count) }
+                }
+            } catch { await MainActor.run { feedError = error.localizedDescription; likedIDs.remove(id) } }
+        }
     }
 
     private func toggleSave(_ id: Int) {
         if savedIDs.contains(id) { savedIDs.remove(id) } else { savedIDs.insert(id) }
         guard let videoID = serverID(for: id) else { return }
-        Task { do { try await LerizAPI.toggleSave(videoID: videoID) } catch { await MainActor.run { feedError = error.localizedDescription } } }
+        Task {
+            do {
+                let result = try await LerizAPI.toggleSave(videoID: videoID)
+                await MainActor.run {
+                    if let saved = result["saved"] as? Bool {
+                        if saved { savedIDs.insert(id) } else { savedIDs.remove(id) }
+                    }
+                }
+            } catch { await MainActor.run { feedError = error.localizedDescription; savedIDs.remove(id) } }
+        }
+    }
+
+    private func withLikes(_ clip: FeedClip, count: Int) -> FeedClip {
+        FeedClip(id: clip.id, creator: clip.creator, handle: clip.handle, caption: clip.caption, tags: clip.tags, song: clip.song, likes: String(count), comments: clip.comments, views: clip.views, accent: clip.accent, videoURL: clip.videoURL, symbol: clip.symbol)
     }
 
     private func serverID(for id: Int) -> String? {
@@ -1248,6 +1277,8 @@ struct ProfileSheet: View {
     @AppStorage("lerizProfileImageData") private var profileImageData = ""
     @AppStorage("lerizAuthToken") private var authToken = ""
     @AppStorage("lerizUsername") private var currentUsername = ""
+    @AppStorage("lerizDisplayName") private var displayName = ""
+    @AppStorage("lerizBio") private var profileBio = "Capture your world, your way."
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -1267,7 +1298,7 @@ struct ProfileSheet: View {
                         }
                         .buttonStyle(.plain)
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(clip?.creator ?? (currentUsername.isEmpty ? "Leriz user" : currentUsername)).font(.title3.bold())
+                            Text(clip?.creator ?? (displayName.isEmpty ? (currentUsername.isEmpty ? "Leriz user" : currentUsername) : displayName)).font(.title3.bold())
                             Text(clip?.handle ?? "@\(currentUsername.isEmpty ? "user" : currentUsername)").font(.subheadline).foregroundStyle(.secondary)
                             Text(clip == nil ? "Your creator profile" : "Creator on Leriz").font(.caption).foregroundStyle(.secondary)
                         }
@@ -1282,7 +1313,7 @@ struct ProfileSheet: View {
                         Button { showEdit = true } label: { Text("Edit profile").font(.system(size: 14, weight: .bold)).frame(maxWidth: .infinity).padding(12).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
                         Button {} label: { Image(systemName: "person.badge.plus").frame(width: 46, height: 42).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9)) }
                     }.padding(.horizontal, 18)
-                    Text("Capture your world, your way.").font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
+                    Text(profileBio).font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18)
                     HStack(spacing: 0) {
                         tab("square.grid.2x2", 0)
                         tab("heart", 1)
@@ -1338,14 +1369,14 @@ struct ProfileSheet: View {
 
 struct EditProfileDemo: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var name = "Your Leriz"
-    @State private var username = "yourleriz"
-    @State private var bio = "Capture your world, your way."
+    @AppStorage("lerizDisplayName") private var name = ""
+    @AppStorage("lerizUsername") private var username = ""
+    @AppStorage("lerizBio") private var bio = "Capture your world, your way."
     var body: some View {
         NavigationStack {
             Form {
                 Section("Profile") { TextField("Name", text: $name); TextField("Username", text: $username); TextField("Bio", text: $bio, axis: .vertical) }
-                Section { Text("Demo only — edits are not saved to a server.").font(.caption).foregroundStyle(.secondary) }
+                Section { Text("Your profile details are saved on this device.").font(.caption).foregroundStyle(.secondary) }
             }.navigationTitle("Edit profile").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         }.preferredColorScheme(.dark)
