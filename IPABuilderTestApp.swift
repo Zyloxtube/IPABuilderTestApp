@@ -210,6 +210,7 @@ struct LoopFeedView: View {
     @State private var showComments = false
     @State private var showSearch = false
     @State private var showProfile = false
+    @State private var selectedProfileClip: FeedClip? = nil
     @State private var showInbox = false
     @State private var showShare = false
 
@@ -228,7 +229,7 @@ struct LoopFeedView: View {
                             onSave: { toggle(clip.id, in: &savedIDs) },
                             onComments: { showComments = true },
                             onShare: { showShare = true },
-                            onProfile: { showProfile = true }
+                            onProfile: { selectedProfileClip = clip; showProfile = true }
                         )
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .rotationEffect(.degrees(-90))
@@ -247,7 +248,13 @@ struct LoopFeedView: View {
         }
         .sheet(isPresented: $showComments) { CommentsSheet(clip: clips[selectedClip]) }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         .sheet(isPresented: $showSearch) { SearchSheet() }
-        .fullScreenCover(isPresented: $showProfile) { ProfileSheet() }
+        .fullScreenCover(isPresented: $showProfile) {
+            if let profileClip = selectedProfileClip {
+                ProfileSheet(clip: profileClip)
+            } else {
+                ProfileSheet()
+            }
+        }
         .fullScreenCover(isPresented: $showCreate) { CreateVideoPage { caption, recordedURL in
             let clip = FeedClip(id: (clips.map(\.id).max() ?? 0) + 1, creator: "Your Leriz", handle: "@yourleriz", caption: caption.isEmpty ? "My new Leriz ✨" : caption, tags: "#leriz #newpost", song: "original audio · yourloop", likes: "0", comments: "0", accent: .purple, videoURL: recordedURL.absoluteString, symbol: "person")
             clips.insert(clip, at: 0)
@@ -307,7 +314,7 @@ struct LoopFeedView: View {
             Spacer()
             navButton("text.bubble", title: "Inbox", selected: false) { showInbox = true }
             Spacer()
-            navButton("person.crop.circle", title: "Profile", selected: false) { showProfile = true }
+            navButton("person.crop.circle", title: "Profile", selected: false) { selectedProfileClip = nil; showProfile = true }
         }
         .padding(.horizontal, 24)
         .padding(.top, 13)
@@ -627,6 +634,7 @@ struct SearchSheet: View {
 
 struct ProfileSheet: View {
     @Environment(\.dismiss) private var dismiss
+    var clip: FeedClip? = nil
     @State private var selectedTab = 0
     @State private var showEdit = false
     var body: some View {
@@ -637,9 +645,9 @@ struct ProfileSheet: View {
                         Circle().fill(LinearGradient(colors: [.cyan, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
                             .frame(width: 88, height: 88).overlay(Image(systemName: "person").font(.system(size: 40)))
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Your Leriz").font(.title3.bold())
-                            Text("@yourleriz").font(.subheadline).foregroundStyle(.secondary)
-                            Text("Creator on Leriz").font(.caption).foregroundStyle(.secondary)
+                            Text(clip?.creator ?? "Your Leriz").font(.title3.bold())
+                            Text(clip?.handle ?? "@yourleriz").font(.subheadline).foregroundStyle(.secondary)
+                            Text(clip == nil ? "Your creator profile" : "Creator on Leriz").font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                     }.padding(.horizontal, 18).padding(.top, 15)
