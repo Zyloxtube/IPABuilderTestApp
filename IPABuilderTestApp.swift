@@ -143,12 +143,7 @@ struct LerizLaunchView: View {
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity)
                     }
-                    Text("SERVER · \\(LerizServerConfiguration.current.serverName)")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.48))
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 1)
+
                 }
                 .padding(22)
                 .background(.ultraThinMaterial.opacity(0.45), in: RoundedRectangle(cornerRadius: 26))
